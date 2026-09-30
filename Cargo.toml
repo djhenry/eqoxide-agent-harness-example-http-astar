@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/harness-socket",
+    "crates/harness-nav",
+    "crates/harness-combat",
+    "crates/harness-http",
+]

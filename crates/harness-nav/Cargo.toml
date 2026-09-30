@@ -1,0 +1,24 @@
+[package]
+name = "harness-nav"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "harness_nav"
+path = "src/lib.rs"
+
+[dependencies]
+# The shared geometry-grid construction/query layer (eqoxide spec §8) plus the asset loader it's
+# built from — both pinned to the exact same commit as every other git dependency on this URL in
+# this workspace (see root Cargo.toml comment / plan Global Constraints: Cargo treats one git URL
+# as one source keyed by rev).
+eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "d9075fe6b4652f84c66d6b58e0a85c4f6ca2a8ba" }
+eqoxide-assets = { git = "https://github.com/djhenry/eqoxide.git", rev = "d9075fe6b4652f84c66d6b58e0a85c4f6ca2a8ba" }
+anyhow = "1"
+
+[dev-dependencies]
+# test-fixtures exposes ZoneAssetState::test_ready() — a real Ready state over a flat-floor
+# Collision — to downstream test builds; it's #[cfg(any(test, feature = "test-fixtures"))] in
+# eqoxide-zone-geometry, so invisible across the crate boundary otherwise (mirrors the exact
+# pattern eqoxide-nav's own Cargo.toml uses for the same feature, in the eqoxide repo).
+eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "d9075fe6b4652f84c66d6b58e0a85c4f6ca2a8ba", features = ["test-fixtures"] }

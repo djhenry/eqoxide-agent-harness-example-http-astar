@@ -1,0 +1,24 @@
+[package]
+name = "harness-http"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "harness-http"
+path = "src/main.rs"
+
+[lib]
+name = "harness_http"
+path = "src/lib.rs"
+
+[dependencies]
+harness-socket = { path = "../harness-socket" }
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+# "util" gates tower::ServiceExt (the oneshot() call harness-http's health-check test uses below) —
+# off by default, and axum 0.7's own testing docs use exactly this feature/version pairing.
+tower = { version = "0.4", features = ["util"] }

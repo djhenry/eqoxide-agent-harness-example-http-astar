@@ -1,0 +1,14 @@
+[package]
+name = "harness-socket"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "harness_socket"
+path = "src/lib.rs"
+
+[dependencies]
+# Zero-eqoxide-internal-dependency wire types (eqoxide's own docs/agent-api.md: "zero dependency on
+# any other eqoxide crate") — this is the one crate in this workspace that talks to eqoxide at all.
+eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "d9075fe6b4652f84c66d6b58e0a85c4f6ca2a8ba" }
+serde_json = "1"
