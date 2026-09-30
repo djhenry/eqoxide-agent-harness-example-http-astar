@@ -1,2 +1,10 @@
-//! Placeholder binary entry point — Task 6 fills this in.
-fn main() {}
+//! Convenience binary: binds harness_http::router() to a local port. See eqoxide spec §10 — this
+//! is optional, and out-of-process from eqoxide either way.
+
+#[tokio::main]
+async fn main() {
+    let app = harness_http::router();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8090").await.unwrap();
+    println!("harness-http listening on http://127.0.0.1:8090 (routes: GET /health)");
+    axum::serve(listener, app).await.unwrap();
+}
