@@ -4,7 +4,9 @@
 #[tokio::main]
 async fn main() {
     let app = harness_http::router();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8090").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:8090")
+        .await
+        .unwrap();
     println!("harness-http listening on http://127.0.0.1:8090 (routes: GET /health)");
     axum::serve(listener, app).await.unwrap();
 }

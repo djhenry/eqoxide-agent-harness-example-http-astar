@@ -26,7 +26,10 @@ mod tests {
     #[test]
     fn load_zone_on_a_nonexistent_path_is_an_error() {
         let result = load_zone(Path::new("/nonexistent/definitely-not-a-zone.glb"), 32.0);
-        assert!(result.is_err(), "a missing GLB file must surface as an error, not panic or silently succeed");
+        assert!(
+            result.is_err(),
+            "a missing GLB file must surface as an error, not panic or silently succeed"
+        );
     }
 
     /// Proves the pinned eqoxide-zone-geometry dependency actually builds a real, queryable
@@ -39,8 +42,16 @@ mod tests {
     #[test]
     fn the_pinned_zone_geometry_crate_builds_a_real_queryable_collision() {
         let state = eqoxide_zone_geometry::zone_assets::ZoneAssetState::test_ready();
-        let collision = state.collision().expect("test_ready() always returns a Ready state");
-        assert!(collision.has_geometry(), "the flat-floor fixture must produce real grid geometry");
-        assert!(collision.has_triangles(), "the flat-floor fixture must produce real triangles to query");
+        let collision = state
+            .collision()
+            .expect("test_ready() always returns a Ready state");
+        assert!(
+            collision.has_geometry(),
+            "the flat-floor fixture must produce real grid geometry"
+        );
+        assert!(
+            collision.has_triangles(),
+            "the flat-floor fixture must produce real triangles to query"
+        );
     }
 }

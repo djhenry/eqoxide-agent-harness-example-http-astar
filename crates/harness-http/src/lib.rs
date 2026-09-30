@@ -15,7 +15,9 @@ struct Health {
 }
 
 async fn health() -> Json<Health> {
-    Json(Health { status: "ok".to_string() })
+    Json(Health {
+        status: "ok".to_string(),
+    })
 }
 
 pub fn router() -> Router {
@@ -31,11 +33,18 @@ mod tests {
     async fn health_returns_200_and_ok_status() {
         let app = router();
         let response = app
-            .oneshot(axum::http::Request::builder().uri("/health").body(axum::body::Body::empty()).unwrap())
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/health")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let health: Health = serde_json::from_slice(&body).unwrap();
         assert_eq!(health.status, "ok");
     }

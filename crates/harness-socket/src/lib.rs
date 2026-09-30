@@ -16,7 +16,10 @@ use std::path::Path;
 pub enum ClientError {
     Io(std::io::Error),
     Json(serde_json::Error),
-    HandshakeRejected { server_protocol_version: u32, message: String },
+    HandshakeRejected {
+        server_protocol_version: u32,
+        message: String,
+    },
     ConnectionClosed,
 }
 
@@ -25,7 +28,10 @@ impl std::fmt::Display for ClientError {
         match self {
             ClientError::Io(e) => write!(f, "io error: {e}"),
             ClientError::Json(e) => write!(f, "protocol json error: {e}"),
-            ClientError::HandshakeRejected { server_protocol_version, message } => {
+            ClientError::HandshakeRejected {
+                server_protocol_version,
+                message,
+            } => {
                 write!(f, "handshake rejected (server_protocol_version={server_protocol_version}): {message}")
             }
             ClientError::ConnectionClosed => write!(f, "connection closed by server"),
@@ -35,10 +41,14 @@ impl std::fmt::Display for ClientError {
 
 impl std::error::Error for ClientError {}
 impl From<std::io::Error> for ClientError {
-    fn from(e: std::io::Error) -> Self { ClientError::Io(e) }
+    fn from(e: std::io::Error) -> Self {
+        ClientError::Io(e)
+    }
 }
 impl From<serde_json::Error> for ClientError {
-    fn from(e: serde_json::Error) -> Self { ClientError::Json(e) }
+    fn from(e: serde_json::Error) -> Self {
+        ClientError::Json(e)
+    }
 }
 
 /// A connected, handshaken Agent Plugin API session.
@@ -61,7 +71,9 @@ impl AgentClient {
     }
 
     fn handshake(&mut self) -> Result<(), ClientError> {
-        let hello = encode_line(&Hello { protocol_version: PROTOCOL_VERSION })?;
+        let hello = encode_line(&Hello {
+            protocol_version: PROTOCOL_VERSION,
+        })?;
         self.writer.write_all(hello.as_bytes())?;
 
         let mut line = String::new();
@@ -72,9 +84,13 @@ impl AgentClient {
         let reply: HandshakeReply = decode_line(&line)?;
         match reply {
             HandshakeReply::Accepted => Ok(()),
-            HandshakeReply::Rejected { server_protocol_version, message } => {
-                Err(ClientError::HandshakeRejected { server_protocol_version, message })
-            }
+            HandshakeReply::Rejected {
+                server_protocol_version,
+                message,
+            } => Err(ClientError::HandshakeRejected {
+                server_protocol_version,
+                message,
+            }),
         }
     }
 
@@ -107,15 +123,37 @@ mod tests {
     fn canned_observation(tick: u64) -> Observation {
         Observation {
             own: OwnState {
-                pos: [1.0, 2.0, 3.0], heading: 0.0, hp: 100, hp_max: 100, hp_verified: true,
-                mana: 0, mana_max: 0, endurance: 0, endurance_max: 0, endurance_confirmed: true,
-                casting: None, buffs: vec![], zone_name: "qeynos".into(), target_id: None,
-                target_name: None, auto_attack: false, sitting: false, held: false,
-                player_class: "Warrior".into(), player_level: 1,
+                pos: [1.0, 2.0, 3.0],
+                heading: 0.0,
+                hp: 100,
+                hp_max: 100,
+                hp_verified: true,
+                mana: 0,
+                mana_max: 0,
+                endurance: 0,
+                endurance_max: 0,
+                endurance_confirmed: true,
+                casting: None,
+                buffs: vec![],
+                zone_name: "qeynos".into(),
+                target_id: None,
+                target_name: None,
+                auto_attack: false,
+                sitting: false,
+                held: false,
+                player_class: "Warrior".into(),
+                player_level: 1,
             },
             visible: vec![],
-            legal_actions: LegalActionMask { gems: [false; 9], abilities: vec![] },
-            dead: false, terminated: false, truncated: false, visibility_available: true, tick,
+            legal_actions: LegalActionMask {
+                gems: [false; 9],
+                abilities: vec![],
+            },
+            dead: false,
+            terminated: false,
+            truncated: false,
+            visibility_available: true,
+            tick,
         }
     }
 
@@ -140,12 +178,16 @@ mod tests {
                 let mut line = String::new();
                 reader.read_line(&mut line).unwrap();
                 let _hello: Hello = decode_line(&line).unwrap();
-                writer.write_all(encode_line(&HandshakeReply::Accepted).unwrap().as_bytes()).unwrap();
+                writer
+                    .write_all(encode_line(&HandshakeReply::Accepted).unwrap().as_bytes())
+                    .unwrap();
 
                 let mut step_line = String::new();
                 reader.read_line(&mut step_line).unwrap();
                 let _step: Step = decode_line(&step_line).unwrap();
-                writer.write_all(encode_line(&canned_observation(0)).unwrap().as_bytes()).unwrap();
+                writer
+                    .write_all(encode_line(&canned_observation(0)).unwrap().as_bytes())
+                    .unwrap();
                 let _ = sock_path;
             }
         });
@@ -153,7 +195,12 @@ mod tests {
         let mut client = AgentClient::connect(&sock_path).expect("connect + handshake");
         client
             .send_step(&Step {
-                movement: Some(AgentMovement { dir: [1.0, 0.0], up: 0.0, jump: false, wish_heading: None }),
+                movement: Some(AgentMovement {
+                    dir: [1.0, 0.0],
+                    up: 0.0,
+                    jump: false,
+                    wish_heading: None,
+                }),
                 verb: None,
             })
             .expect("send step");
