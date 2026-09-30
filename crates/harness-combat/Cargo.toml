@@ -12,3 +12,6 @@ path = "src/lib.rs"
 # bearing itself from raw Observation data (eqoxide spec §7.2), exactly what a human player derives
 # by looking at their screen, with no special access to eqoxide internals.
 eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "d9075fe6b4652f84c66d6b58e0a85c4f6ca2a8ba" }
+
+[dev-dependencies]
+harness-socket = { path = "../harness-socket" }
