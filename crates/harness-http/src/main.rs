@@ -1,5 +1,5 @@
-//! Convenience binary: binds harness_http::router() to a local port. See eqoxide spec §10 — this
-//! is optional, and out-of-process from eqoxide either way.
+//! Convenience binary that binds `harness_http::router()` to a local port (eqoxide spec §10).
+//! This binary is optional, and runs out-of-process from eqoxide either way.
 
 #[tokio::main]
 async fn main() {

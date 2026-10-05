@@ -1,6 +1,6 @@
-//! Agent Plugin API client (eqoxide spec §10) — connects to a running eqoxide instance's
-//! `--agent-socket` Unix domain socket, performs the version handshake, and exchanges `Step`/
-//! `Observation` over it. Mirrors eqoxide's own
+//! Agent Plugin API client (eqoxide spec §10). This crate connects to a running eqoxide
+//! instance's `--agent-socket` Unix domain socket, performs the version handshake, exchanges
+//! `Step` and `Observation` values over the socket, and mirrors eqoxide's own
 //! `crates/eqoxide-agent-protocol/examples/fixed_sequence_client.rs`, productized as a reusable
 //! type instead of a one-shot script.
 
@@ -58,8 +58,8 @@ pub struct AgentClient {
 }
 
 impl AgentClient {
-    /// Connect to `path` and perform the version handshake. Returns `Err` on a `Rejected` reply,
-    /// an I/O error, or a malformed line — matching the handshake contract in eqoxide's
+    /// Connects to `path` and performs the version handshake. Returns `Err` on a `Rejected`
+    /// reply, an I/O error, or a malformed line, matching the handshake contract in eqoxide's
     /// docs/agent-api.md.
     pub fn connect(path: impl AsRef<Path>) -> Result<Self, ClientError> {
         let stream = UnixStream::connect(path)?;
@@ -94,15 +94,15 @@ impl AgentClient {
         }
     }
 
-    /// Send one `Step`. There is no per-`Step` acknowledgment — its effect shows up in the next
-    /// `recv_observation()` call, not a direct reply (eqoxide's docs/agent-api.md).
+    /// Sends one `Step`. There is no per-`Step` acknowledgment. The `Step`'s effect shows up in
+    /// the next `recv_observation` call instead of a direct reply (eqoxide's docs/agent-api.md).
     pub fn send_step(&mut self, step: &Step) -> Result<(), ClientError> {
         let line = encode_line(step)?;
         self.writer.write_all(line.as_bytes())?;
         Ok(())
     }
 
-    /// Block for the next `Observation` line.
+    /// Blocks for the next `Observation` line.
     pub fn recv_observation(&mut self) -> Result<Observation, ClientError> {
         let mut line = String::new();
         let n = self.reader.read_line(&mut line)?;
@@ -157,9 +157,9 @@ mod tests {
         }
     }
 
-    /// A minimal fake server: accept one connection, handshake Accepted, then echo one
-    /// Observation per Step received. Proves AgentClient round-trips against the real wire
-    /// framing without needing a live eqoxide instance.
+    /// A minimal fake server: accepts one connection, handshakes it as `Accepted`, then echoes
+    /// one `Observation` per `Step` received. Proves `AgentClient` round-trips against the real
+    /// wire framing without needing a live eqoxide instance.
     #[test]
     fn connect_handshakes_and_round_trips_a_step_and_observation() {
         let dir = std::env::temp_dir().join(format!("harness-socket-test-{}", std::process::id()));

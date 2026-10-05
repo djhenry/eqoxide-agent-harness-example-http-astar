@@ -1,23 +1,28 @@
-//! Chase-and-face-while-engaged (eqoxide spec §7.2) — reads own position/heading and the target's
-//! live position straight from `Observation`, computes range/bearing itself (exactly what a human
-//! player derives by looking at their screen), and drives movement + wish_heading toward the
-//! target. No special access to eqoxide internals.
+//! Chase-and-face-while-engaged (eqoxide spec §7.2) reads own position and heading and the
+//! target's live position directly from `Observation`, computes range and bearing itself exactly
+//! as a human player would by looking at their screen, and drives movement and `wish_heading`
+//! toward the target. This crate has no special access to eqoxide internals.
 
 use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::{OwnState, VisibleEntity};
 
-/// EQ heading in degrees (0..360) for a movement delta in server axes: heading 0 faces +Y
-/// (north) and increases counter-clockwise (90 = west, 180 = south, 270 = east) — reimplemented
-/// here from eqoxide's own `eqoxide_core::coord::eq_heading` (crates/eqoxide-core/src/coord.rs in
-/// the eqoxide repo), which this workspace cannot depend on (Global Constraints: only
-/// eqoxide-agent-protocol/eqoxide-assets/eqoxide-zone-geometry are allowed dependencies).
+/// Returns the EQ heading in degrees, from 0 to 360, for a movement delta of `d_east` and
+/// `d_north` in server axes. Heading 0 faces +Y (north) and increases counter-clockwise, so 90
+/// faces west, 180 faces south and 270 faces east.
+///
+/// This function reimplements eqoxide's own `eqoxide_core::coord::eq_heading`
+/// (`crates/eqoxide-core/src/coord.rs` in the eqoxide repo). The Global Constraints restrict this
+/// workspace to the eqoxide-agent-protocol, eqoxide-assets and eqoxide-zone-geometry
+/// dependencies, so this workspace cannot depend on that crate directly.
 fn eq_heading(d_east: f32, d_north: f32) -> f32 {
     (-d_east).atan2(d_north).to_degrees().rem_euclid(360.0)
 }
 
-/// Compute the movement to close on and face `target`, given the agent's own current state.
-/// Always faces the target (`wish_heading` is always `Some`); stops closing distance once within
-/// `engage_range` but keeps facing it — the "while engaged" half of the behavior.
+/// Computes the movement that closes on and faces `target`, given `own`'s current state.
+///
+/// `wish_heading` is always `Some`, so the returned movement always faces `target`. Once `own`
+/// comes within `engage_range` of `target`, the movement stops closing distance but keeps facing
+/// `target`. This is the "while engaged" half of the behavior.
 pub fn chase_and_face(own: &OwnState, target: &VisibleEntity, engage_range: f32) -> AgentMovement {
     let d_east = target.pos[0] - own.pos[0];
     let d_north = target.pos[1] - own.pos[1];

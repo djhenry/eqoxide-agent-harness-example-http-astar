@@ -1,19 +1,20 @@
-//! Zone geometry loading (eqoxide spec §10, §11) — builds a `Collision` from a zone's asset GLB,
-//! using the exact same construction path eqoxide's own client uses (`eqoxide_assets::ZoneAssets`
-//! + `eqoxide_zone_geometry::collision::Collision::build`).
+//! Zone geometry loading (eqoxide spec §10, §11). This module builds a `Collision` from a
+//! zone's asset GLB, using the exact same construction path used by eqoxide's own client
+//! (`eqoxide_assets::ZoneAssets` and `eqoxide_zone_geometry::collision::Collision::build`).
 //!
-//! §11 gives the harness the on-disk path to eqoxide's asset cache via the handshake's
-//! `asset_cache_dir` field — but that field isn't implemented in the protocol yet (a separate,
-//! not-yet-done piece of this redesign: eqoxide spec §9/§11). Until then, callers supply the GLB
-//! path directly.
+//! §11 gives the harness the on-disk path to eqoxide's asset cache through the handshake's
+//! `asset_cache_dir` field, but the protocol does not implement that field yet (eqoxide spec
+//! §9/§11). Until the protocol implements it, callers supply the GLB path directly.
 
 use eqoxide_assets::ZoneAssets;
 use eqoxide_zone_geometry::collision::Collision;
 use std::path::Path;
 
-/// Load a zone's collision geometry from its asset GLB at `glb_path`, gridded at `cell_size`
-/// (world units per collision-grid cell — eqoxide's own zone loader uses the same construction
-/// path with its own cell size choice; callers of this function choose their own).
+/// Loads a zone's collision geometry from its asset GLB at `glb_path`, gridded at `cell_size`
+/// (world units per collision-grid cell).
+///
+/// eqoxide's own zone loader uses the same construction path but chooses its own cell size.
+/// Callers of this function choose their own `cell_size`.
 pub fn load_zone(glb_path: &Path, cell_size: f32) -> anyhow::Result<Collision> {
     let assets = ZoneAssets::from_glb(glb_path)?;
     Ok(Collision::build(&assets, cell_size))
@@ -32,12 +33,13 @@ mod tests {
         );
     }
 
-    /// Proves the pinned eqoxide-zone-geometry dependency actually builds a real, queryable
-    /// Collision through the same ZoneAssets -> Collision::build path load_zone uses — using
-    /// eqoxide's own test-only flat-floor fixture (test-fixtures feature) instead of a real GLB
-    /// file, which this workspace has no fixture for yet. This test does not exercise
-    /// `load_zone`'s own GLB-parsing step (`ZoneAssets::from_glb`) — that needs a real .glb file,
-    /// which is follow-up-plan work once one is available to check into this repo (see
+    /// Proves the pinned eqoxide-zone-geometry dependency builds a real, queryable `Collision`
+    /// through the same `ZoneAssets` to `Collision::build` path that `load_zone` uses.
+    ///
+    /// This test uses eqoxide's own test-only flat-floor fixture (the `test-fixtures` feature)
+    /// instead of a real GLB file. This workspace has no GLB fixture yet. This test does not
+    /// exercise `load_zone`'s own GLB-parsing step (`ZoneAssets::from_glb`). That step needs a
+    /// real `.glb` file, and checking one into this repo is follow-up-plan work (see
     /// docs/scope.md).
     #[test]
     fn the_pinned_zone_geometry_crate_builds_a_real_queryable_collision() {

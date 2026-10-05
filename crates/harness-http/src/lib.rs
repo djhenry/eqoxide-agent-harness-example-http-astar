@@ -1,9 +1,8 @@
-//! Optional HTTP convenience wrapper around harness-socket (eqoxide spec §10) — talks to
-//! harness-socket, never to eqoxide directly.
+//! Optional HTTP convenience wrapper around harness-socket (eqoxide spec §10). This wrapper
+//! talks to harness-socket, never to eqoxide directly.
 //!
-//! This task only wires up a `/health` endpoint to prove the axum scaffolding and its place in
-//! the workspace. Real socket-backed routes (movement, combat verbs, observation polling) are
-//! out of scope for this plan — see docs/scope.md.
+//! Only a `/health` route exists so far. Real socket-backed routes (movement, combat verbs,
+//! observation polling) remain unimplemented. See docs/scope.md.
 
 use axum::routing::get;
 use axum::{Json, Router};
