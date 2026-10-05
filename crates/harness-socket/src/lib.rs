@@ -168,28 +168,24 @@ mod tests {
         let _ = std::fs::remove_file(&sock_path);
         let listener = UnixListener::bind(&sock_path).unwrap();
 
-        let server = std::thread::spawn({
-            let sock_path = sock_path.clone();
-            move || {
-                let (stream, _) = listener.accept().unwrap();
-                let mut writer = stream.try_clone().unwrap();
-                let mut reader = BufReader::new(stream);
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut writer = stream.try_clone().unwrap();
+            let mut reader = BufReader::new(stream);
 
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let _hello: Hello = decode_line(&line).unwrap();
-                writer
-                    .write_all(encode_line(&HandshakeReply::Accepted).unwrap().as_bytes())
-                    .unwrap();
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let _hello: Hello = decode_line(&line).unwrap();
+            writer
+                .write_all(encode_line(&HandshakeReply::Accepted).unwrap().as_bytes())
+                .unwrap();
 
-                let mut step_line = String::new();
-                reader.read_line(&mut step_line).unwrap();
-                let _step: Step = decode_line(&step_line).unwrap();
-                writer
-                    .write_all(encode_line(&canned_observation(0)).unwrap().as_bytes())
-                    .unwrap();
-                let _ = sock_path;
-            }
+            let mut step_line = String::new();
+            reader.read_line(&mut step_line).unwrap();
+            let _step: Step = decode_line(&step_line).unwrap();
+            writer
+                .write_all(encode_line(&canned_observation(0)).unwrap().as_bytes())
+                .unwrap();
         });
 
         let mut client = AgentClient::connect(&sock_path).expect("connect + handshake");
