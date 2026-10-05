@@ -369,6 +369,7 @@ name = "harness-combat"
 version = "0.1.0"
 dependencies = [
  "eqoxide-agent-protocol",
+ "harness-socket",
 ]
 
 [[package]]
