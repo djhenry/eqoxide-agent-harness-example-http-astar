@@ -392,7 +392,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "eqoxide-assets",
+ "eqoxide-core",
  "eqoxide-zone-geometry",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]
