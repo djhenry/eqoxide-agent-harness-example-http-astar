@@ -11,6 +11,7 @@ path = "src/lib.rs"
 # Every git dependency on this URL shares one rev (see docs/scope.md, "Bumping the eqoxide pin").
 # eqoxide-core supplies the shared physics constants and the region map; narrowing this dependency
 # is a future refactor.
+eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "5f6a17d8ae208cab7585f7db87c9a853a8f50473" }
 eqoxide-core = { git = "https://github.com/djhenry/eqoxide.git", rev = "5f6a17d8ae208cab7585f7db87c9a853a8f50473" }
 eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "5f6a17d8ae208cab7585f7db87c9a853a8f50473" }
 eqoxide-assets = { git = "https://github.com/djhenry/eqoxide.git", rev = "5f6a17d8ae208cab7585f7db87c9a853a8f50473" }

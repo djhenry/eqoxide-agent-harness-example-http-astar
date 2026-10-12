@@ -391,6 +391,7 @@ name = "harness-nav"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "eqoxide-agent-protocol",
  "eqoxide-assets",
  "eqoxide-core",
  "eqoxide-zone-geometry",
