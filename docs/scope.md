@@ -43,8 +43,7 @@ This repo bootstraps the reference agent harness described in eqoxide's
 ## Bumping the eqoxide pin
 
 Every git dependency in this workspace on `https://github.com/djhenry/eqoxide.git` **must** share
-one `rev`. To bump it (e.g. once eqoxide's `worktree-rl-api-design` branch gains new commits
-needed by this harness, or once that branch merges to `main`):
+one `rev`. To bump it (e.g. when eqoxide's `main` gains commits needed by this harness):
 
 1. `git -C ~/git/eqoxide log --oneline -1` (or check the PR) to get the new commit sha.
 2. Replace every occurrence of the old sha with the new one across every `Cargo.toml` in

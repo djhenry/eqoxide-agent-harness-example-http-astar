@@ -43,6 +43,5 @@ cargo run -p harness-http
 ## Dependency pinning
 
 This workspace depends on `eqoxide-agent-protocol`, `eqoxide-assets`, and `eqoxide-zone-geometry`
-as **git** dependencies pinned to one commit on eqoxide's `worktree-rl-api-design` branch (that
-work is not on `main` yet — see eqoxide spec §13). See
+as **git** dependencies pinned to one commit on eqoxide's `main` branch. See
 [`docs/scope.md`](docs/scope.md#bumping-the-eqoxide-pin) for the bump procedure.
