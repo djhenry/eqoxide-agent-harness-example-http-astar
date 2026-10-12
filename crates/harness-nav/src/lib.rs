@@ -1,6 +1,9 @@
-//! Zone geometry loading (eqoxide spec §10). This crate builds an
-//! `eqoxide_zone_geometry::collision::Collision` from a zone's asset files, using the same
-//! shared geometry-grid crate used by eqoxide itself. A* path planning on top of this geometry
-//! is a follow-up plan (see docs/scope.md), not part of this crate yet.
+//! Navigation for an eqoxide agent harness: zone geometry loading and the A* planner that runs on
+//! top of it. The path walker, chase and zone-cross are still to be ported (see docs/scope.md).
 
+pub mod collision;
+pub mod diagnostics;
+pub mod planner;
+pub mod steering;
+pub mod traversability;
 pub mod zone;
