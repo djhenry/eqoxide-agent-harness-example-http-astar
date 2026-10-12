@@ -2,3 +2,4 @@
 //! `Observation` values. This crate has no special access to eqoxide internals.
 
 pub mod chase;
+pub mod engage;

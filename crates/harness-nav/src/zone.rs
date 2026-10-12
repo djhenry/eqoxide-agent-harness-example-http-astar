@@ -6,6 +6,8 @@
 //! eqoxide keeps `<zone>.glb`; [`load_zone_from_cache`] finds a zone there by name.
 
 use eqoxide_assets::ZoneAssets;
+use eqoxide_core::region_map::RegionMap;
+use std::sync::Arc;
 use eqoxide_zone_geometry::collision::Collision;
 use std::path::{Path, PathBuf};
 
@@ -27,9 +29,18 @@ pub fn zone_glb_path(asset_cache_dir: &Path, zone_name: &str) -> PathBuf {
     asset_cache_dir.join(format!("{zone_name}.glb"))
 }
 
-/// Loads `zone_name` from the asset cache disclosed in the handshake, at eqoxide's own cell size.
+/// Loads `zone_name` from the asset cache disclosed in the handshake, at eqoxide's own cell size,
+/// with the zone's region data (`maps/water/<zone>.wtr`: water, lava and zone lines) attached. A
+/// missing or unreadable region file is not an error: the grid records why it has none, and
+/// zone-line queries then report that rather than an empty answer.
 pub fn load_zone_from_cache(asset_cache_dir: &Path, zone_name: &str) -> anyhow::Result<Collision> {
-    load_zone(&zone_glb_path(asset_cache_dir, zone_name), EQOXIDE_CELL_SIZE)
+    let mut collision = load_zone(&zone_glb_path(asset_cache_dir, zone_name), EQOXIDE_CELL_SIZE)?;
+    let water = RegionMap::try_load(&asset_cache_dir.join("maps").join("water"), zone_name).map(Arc::new);
+    if let Err(e) = &water {
+        tracing::warn!("zone '{zone_name}' has no usable region data: {e}");
+    }
+    collision.set_region_data(water);
+    Ok(collision)
 }
 
 #[cfg(test)]

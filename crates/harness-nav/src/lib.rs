@@ -1,5 +1,5 @@
 //! Navigation for an eqoxide agent harness: zone geometry loading and the A* planner that runs on
-//! top of it. Chase-and-face and zone-cross are still to be ported (see docs/scope.md).
+//! top of it. Zone-cross walks to the nearest zone line; eqoxide fires the crossing itself.
 
 pub mod collision;
 pub mod diagnostics;
