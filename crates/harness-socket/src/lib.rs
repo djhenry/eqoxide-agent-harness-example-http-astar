@@ -10,7 +10,7 @@ use eqoxide_agent_protocol::observation::Observation;
 use eqoxide_agent_protocol::step::Step;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub enum ClientError {
@@ -55,6 +55,7 @@ impl From<serde_json::Error> for ClientError {
 pub struct AgentClient {
     writer: UnixStream,
     reader: BufReader<UnixStream>,
+    asset_cache_dir: PathBuf,
 }
 
 impl AgentClient {
@@ -65,12 +66,18 @@ impl AgentClient {
         let stream = UnixStream::connect(path)?;
         let writer = stream.try_clone()?;
         let reader = BufReader::new(stream);
-        let mut client = AgentClient { writer, reader };
-        client.handshake()?;
+        let mut client = AgentClient { writer, reader, asset_cache_dir: PathBuf::new() };
+        client.asset_cache_dir = client.handshake()?;
         Ok(client)
     }
 
-    fn handshake(&mut self) -> Result<(), ClientError> {
+    /// Where eqoxide keeps its assembled zone files, as disclosed in the handshake. Valid because
+    /// the harness runs on the same machine as the eqoxide it drives.
+    pub fn asset_cache_dir(&self) -> &Path {
+        &self.asset_cache_dir
+    }
+
+    fn handshake(&mut self) -> Result<PathBuf, ClientError> {
         let hello = encode_line(&Hello {
             protocol_version: PROTOCOL_VERSION,
         })?;
@@ -83,7 +90,7 @@ impl AgentClient {
         }
         let reply: HandshakeReply = decode_line(&line)?;
         match reply {
-            HandshakeReply::Accepted => Ok(()),
+            HandshakeReply::Accepted { asset_cache_dir } => Ok(PathBuf::from(asset_cache_dir)),
             HandshakeReply::Rejected {
                 server_protocol_version,
                 message,
@@ -177,7 +184,7 @@ mod tests {
             reader.read_line(&mut line).unwrap();
             let _hello: Hello = decode_line(&line).unwrap();
             writer
-                .write_all(encode_line(&HandshakeReply::Accepted).unwrap().as_bytes())
+                .write_all(encode_line(&HandshakeReply::Accepted { asset_cache_dir: "/cache/models".into() }).unwrap().as_bytes())
                 .unwrap();
 
             let mut step_line = String::new();
@@ -189,6 +196,7 @@ mod tests {
         });
 
         let mut client = AgentClient::connect(&sock_path).expect("connect + handshake");
+        assert_eq!(client.asset_cache_dir(), Path::new("/cache/models"));
         client
             .send_step(&Step {
                 movement: Some(AgentMovement {
