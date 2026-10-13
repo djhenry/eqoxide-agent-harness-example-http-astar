@@ -219,14 +219,17 @@ impl Walker {
     /// the zone change itself, so a successful cross shows up as a changed `zone_name`, which
     /// drops the goal.
     ///
-    /// Picks the nearest line, not a named destination: `Observation` carries no zone points.
-    pub fn zone_cross(&mut self, from: [f32; 3]) -> Result<u64, ZoneCrossError> {
+    /// `line` is a zone-line region index from the zone's region data; `None` picks the nearest.
+    /// `Observation` carries no zone points, so the harness cannot tell which line leads where, or
+    /// which lines eqoxide refuses to cross (the nearest line in a zone with teleport pads can be
+    /// one): naming a line is how the caller steers around that.
+    pub fn zone_cross(&mut self, from: [f32; 3], line: Option<i32>) -> Result<u64, ZoneCrossError> {
         let col = self.collision.clone().ok_or(ZoneCrossError::ZoneNotLoaded)?;
         let lines = col.zone_line_indices().map_err(|_| ZoneCrossError::NoRegionData)?;
         if lines.is_empty() {
             return Err(ZoneCrossError::NoZoneLines);
         }
-        let (_, p) = col.find_zone_line_near(None, from).ok_or(ZoneCrossError::NoZoneLines)?;
+        let (_, p) = col.find_zone_line_near(line, from).ok_or(ZoneCrossError::NoZoneLines)?;
         Ok(self.slots.goto((p[0], p[1], p[2])))
     }
 
@@ -1131,7 +1134,7 @@ mod tests {
         c.set_water(Some(Arc::new(RegionMap::zone_line_box(-5.0, 5.0, 100.0, 110.0, -2.0, 2.0, 7))));
         let mut w = Walker::new(NavSlots::default(), NavDebugView::default());
         w.set_zone(ZONE, Arc::new(c));
-        w.zone_cross([0.0, 0.0, 0.0]).expect("a line exists");
+        w.zone_cross([0.0, 0.0, 0.0], None).expect("a line exists");
         let goal = w.slots().goto_target.lock().unwrap().unwrap();
         assert!(goal.0 > 99.0 && goal.0 < 111.0, "goal should be inside the line, got {goal:?}");
         let m = tick_until_moving(&mut w, &obs([0.0, 0.0, 0.0]));
@@ -1141,9 +1144,9 @@ mod tests {
     #[test]
     fn zone_cross_says_why_it_cannot() {
         let mut w = Walker::new(NavSlots::default(), NavDebugView::default());
-        assert_eq!(w.zone_cross([0.0; 3]), Err(ZoneCrossError::ZoneNotLoaded));
+        assert_eq!(w.zone_cross([0.0; 3], None), Err(ZoneCrossError::ZoneNotLoaded));
         w.set_zone(ZONE, flat_floor());
-        assert_eq!(w.zone_cross([0.0; 3]), Err(ZoneCrossError::NoRegionData));
+        assert_eq!(w.zone_cross([0.0; 3], None), Err(ZoneCrossError::NoRegionData));
     }
 
     #[test]
