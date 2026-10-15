@@ -11,10 +11,10 @@ path = "src/lib.rs"
 # Every git dependency on this URL shares one rev (see docs/scope.md, "Bumping the eqoxide pin").
 # eqoxide-core supplies the shared physics constants and the region map; narrowing this dependency
 # is a future refactor.
-eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "796e550c82b4e00a2296bb13b658303dcfe4909c" }
-eqoxide-core = { git = "https://github.com/djhenry/eqoxide.git", rev = "796e550c82b4e00a2296bb13b658303dcfe4909c" }
-eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "796e550c82b4e00a2296bb13b658303dcfe4909c" }
-eqoxide-assets = { git = "https://github.com/djhenry/eqoxide.git", rev = "796e550c82b4e00a2296bb13b658303dcfe4909c" }
+eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "08ad274201052187e7b4ceb540f02732c6693822" }
+eqoxide-core = { git = "https://github.com/djhenry/eqoxide.git", rev = "08ad274201052187e7b4ceb540f02732c6693822" }
+eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "08ad274201052187e7b4ceb540f02732c6693822" }
+eqoxide-assets = { git = "https://github.com/djhenry/eqoxide.git", rev = "08ad274201052187e7b4ceb540f02732c6693822" }
 anyhow = "1"
 tracing = "0.1"
 serde = { version = "1", features = ["derive", "rc"] }
@@ -22,6 +22,6 @@ serde = { version = "1", features = ["derive", "rc"] }
 [dev-dependencies]
 # Test-fixture constructors (flat-floor collision, region-map boxes) are cfg(test)/feature-gated
 # in the eqoxide crates, so they are invisible across the crate boundary otherwise.
-eqoxide-core = { git = "https://github.com/djhenry/eqoxide.git", rev = "796e550c82b4e00a2296bb13b658303dcfe4909c", features = ["test-fixtures"] }
-eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "796e550c82b4e00a2296bb13b658303dcfe4909c", features = ["test-fixtures"] }
+eqoxide-core = { git = "https://github.com/djhenry/eqoxide.git", rev = "08ad274201052187e7b4ceb540f02732c6693822", features = ["test-fixtures"] }
+eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "08ad274201052187e7b4ceb540f02732c6693822", features = ["test-fixtures"] }
 serde_json = "1"
