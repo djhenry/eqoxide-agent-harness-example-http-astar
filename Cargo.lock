@@ -396,6 +396,7 @@ dependencies = [
  "eqoxide-assets",
  "eqoxide-core",
  "eqoxide-zone-geometry",
+ "harness-socket",
  "serde",
  "serde_json",
  "tracing",

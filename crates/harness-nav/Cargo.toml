@@ -25,3 +25,5 @@ serde = { version = "1", features = ["derive", "rc"] }
 eqoxide-core = { git = "https://github.com/djhenry/eqoxide.git", rev = "67c08c63cb69607bbac99c519b51c1b18ac4176e", features = ["test-fixtures"] }
 eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "67c08c63cb69607bbac99c519b51c1b18ac4176e", features = ["test-fixtures"] }
 serde_json = "1"
+# The live_goto example drives the walker over the Agent Plugin API socket.
+harness-socket = { path = "../harness-socket" }
