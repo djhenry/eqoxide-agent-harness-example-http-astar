@@ -2,13 +2,12 @@
 //! zone's asset GLB, using the exact same construction path used by eqoxide's own client
 //! (`eqoxide_assets::ZoneAssets` and `eqoxide_zone_geometry::collision::Collision::build`).
 //!
-//! §11 gives the harness the on-disk path to eqoxide's asset cache through the handshake's
-//! `asset_cache_dir` field, but the protocol does not implement that field yet (eqoxide spec
-//! §9/§11). Until the protocol implements it, callers supply the GLB path directly.
+//! The handshake's `asset_cache_dir` (see `harness_socket::AgentClient::asset_cache_dir`) is where
+//! eqoxide keeps `<zone>.glb`; [`load_zone_from_cache`] finds a zone there by name.
 
 use eqoxide_assets::ZoneAssets;
 use eqoxide_zone_geometry::collision::Collision;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Loads a zone's collision geometry from its asset GLB at `glb_path`, gridded at `cell_size`
 /// (world units per collision-grid cell).
@@ -20,9 +19,28 @@ pub fn load_zone(glb_path: &Path, cell_size: f32) -> anyhow::Result<Collision> {
     Ok(Collision::build(&assets, cell_size))
 }
 
+/// Collision-grid cell size eqoxide itself uses when loading a zone.
+pub const EQOXIDE_CELL_SIZE: f32 = 32.0;
+
+/// Path of `zone_name`'s GLB inside eqoxide's asset cache.
+pub fn zone_glb_path(asset_cache_dir: &Path, zone_name: &str) -> PathBuf {
+    asset_cache_dir.join(format!("{zone_name}.glb"))
+}
+
+/// Loads `zone_name` from the asset cache disclosed in the handshake, at eqoxide's own cell size.
+pub fn load_zone_from_cache(asset_cache_dir: &Path, zone_name: &str) -> anyhow::Result<Collision> {
+    load_zone(&zone_glb_path(asset_cache_dir, zone_name), EQOXIDE_CELL_SIZE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_zone_is_looked_up_by_name_in_the_cache_dir() {
+        assert_eq!(zone_glb_path(Path::new("/cache/models"), "qeynos"), Path::new("/cache/models/qeynos.glb"));
+        assert!(load_zone_from_cache(Path::new("/nonexistent"), "qeynos").is_err());
+    }
 
     #[test]
     fn load_zone_on_a_nonexistent_path_is_an_error() {

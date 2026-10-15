@@ -9,9 +9,9 @@ This repo bootstraps the reference agent harness described in eqoxide's
 - **`harness-socket`**: a real Agent Plugin API client that connects, handshakes, sends `Step`
   values, and receives `Observation` values. Tests exercise this client against an in-process
   fake server, not yet against a live eqoxide instance in CI.
-- **`harness-nav`**: `load_zone(glb_path, cell_size)` builds a real `Collision` via the pinned
-  `eqoxide-zone-geometry` and `eqoxide-assets` crates. No A* planner, walker, or steering exists
-  yet.
+- **`harness-nav`**: `load_zone(glb_path, cell_size)` and `load_zone_from_cache(asset_cache_dir, zone)`
+  build a real `Collision` via the pinned `eqoxide-zone-geometry` and `eqoxide-assets` crates, plus
+  the ported planner, steering and walker.
 - **`harness-combat`**: `chase_and_face(own, target, engage_range)`, a pure function computing
   movement and facing toward a visible target from raw `Observation` data.
 - **`harness-http`**: a `GET /health` route exercising the axum scaffolding. No routes that
@@ -29,13 +29,6 @@ This repo bootstraps the reference agent harness described in eqoxide's
 - **Full HTTP route port** into `harness-http`, from eqoxide's `crates/eqoxide-http/src/` (~20,000
   lines of route handlers). A separate, dedicated plan also covers this port, and the port stays
   optional per spec §10 even then.
-- **§11's `asset_cache_dir` handshake field.** eqoxide spec §11 proposes adding eqoxide's on-disk
-  asset cache path to the handshake, so `harness-nav` can auto-discover zone files instead of a
-  caller supplying a GLB path by hand. That protocol addition (eqoxide spec §9/§11) has not landed
-  in `eqoxide-agent-protocol` yet. Check `HandshakeReply::Accepted` in eqoxide's
-  `crates/eqoxide-agent-protocol/src/handshake.rs`. As long as `HandshakeReply::Accepted` stays a
-  unit variant with no fields, the addition has not landed, and `load_zone` needs an explicit
-  path.
 - **A checked-in test `.glb` fixture** for `harness-nav`'s `load_zone` itself. Today `load_zone`'s
   own test only checks the not-found-path error case. Eqoxide's `test_ready()` fixture covers the
   "does it actually build a real `Collision`" case indirectly, bypassing `from_glb` entirely.

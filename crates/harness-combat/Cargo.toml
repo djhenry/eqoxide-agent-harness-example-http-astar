@@ -11,7 +11,7 @@ path = "src/lib.rs"
 # Only the wire types (OwnState/VisibleEntity/AgentMovement) — chase-and-face computes range and
 # bearing itself from raw Observation data (eqoxide spec §7.2), exactly what a human player derives
 # by looking at their screen, with no special access to eqoxide internals.
-eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "5f6a17d8ae208cab7585f7db87c9a853a8f50473" }
+eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "67c08c63cb69607bbac99c519b51c1b18ac4176e" }
 
 [dev-dependencies]
 harness-socket = { path = "../harness-socket" }
