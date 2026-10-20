@@ -104,11 +104,20 @@ fn main() {
     if !cross {
         finish(&mut client, 0);
     }
-    let goal_id = walker.zone_cross(last.own.pos, line).unwrap_or_else(|e| {
-        eprintln!("FAIL: zone_cross: {e:?}");
+    let lines = walker.zone_lines(last.own.pos).unwrap_or_else(|e| {
+        eprintln!("FAIL: zone_lines: {e:?}");
         finish(&mut client, 1);
     });
-    println!("zone_cross goal {goal_id}");
+    let nearest = lines
+        .iter()
+        .filter(|l| line.is_none_or(|want| want == l.index))
+        .min_by(|a, b| dist(a.pos, last.own.pos).total_cmp(&dist(b.pos, last.own.pos)))
+        .unwrap_or_else(|| {
+            eprintln!("FAIL: no zone line matching {line:?}; zone lines: {lines:?}");
+            finish(&mut client, 1);
+        });
+    let goal_id = walker.slots().goto((nearest.pos[0], nearest.pos[1], nearest.pos[2]));
+    println!("walking to zone line {} at {:?}, goal {goal_id}", nearest.index, nearest.pos);
     let mut settled = 0;
     for _ in 0..MAX_TICKS {
         last = match client.recv_observation() {

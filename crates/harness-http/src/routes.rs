@@ -11,7 +11,7 @@ use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::{Observation, VisibleEntity};
 use eqoxide_agent_protocol::verb::{AgentVerb, CastRequest, CombatVerb, InteractVerb, LifecycleVerb};
 use harness_nav::status::{AggroAvoidOpts, NavStatus};
-use harness_nav::walker::ZoneCrossError;
+use harness_nav::walker::ZoneLinesError;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -27,10 +27,10 @@ pub fn router() -> Router<Ctl> {
         .route("/v1/observe/state", get(observe_state))
         .route("/v1/observe/entities", get(observe_entities))
         .route("/v1/observe/nav", get(observe_nav))
+        .route("/v1/observe/zone_lines", get(observe_zone_lines))
         .route("/v1/move/goto", post(goto))
         .route("/v1/move/follow", post(follow))
         .route("/v1/move/stop", post(stop))
-        .route("/v1/move/zone_cross", post(zone_cross))
         .route("/v1/move/manual", post(manual))
         .route("/v1/move/jump", post(jump))
         .route("/v1/combat/target", post(target))
@@ -249,25 +249,18 @@ async fn stop(State(c): State<Ctl>) -> Response {
     text(StatusCode::OK, "stopped")
 }
 
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct ZoneCrossBody {
-    /// A zone-line region index from the zone's region data. Absent picks the nearest line.
-    line: Option<i32>,
-}
-
-async fn zone_cross(State(c): State<Ctl>, Body(b): Body<ZoneCrossBody>) -> Response {
-    if let Err(r) = live_alive(&c) {
+/// The zone lines of the current zone as `{index, pos}`. Walk to a `pos` with `goto` and eqoxide
+/// crosses once the character stands inside the line. `[]` means the zone has no zone line, and a
+/// `409` means they are unknown.
+async fn observe_zone_lines(State(c): State<Ctl>) -> Response {
+    if let Err(r) = live(&c) {
         return r;
     }
-    let cc = c.clone();
-    let answer = tokio::task::spawn_blocking(move || cc.zone_cross(b.line)).await.ok().flatten();
-    match answer {
-        Some(Ok(goal_id)) => Json(json!({ "goal_id": goal_id })).into_response(),
-        Some(Err(ZoneCrossError::ZoneNotLoaded)) => text(StatusCode::CONFLICT, "the zone's collision is not loaded"),
-        Some(Err(ZoneCrossError::NoRegionData)) => text(StatusCode::CONFLICT, "the zone's region data is missing, so its exits are unknown"),
-        Some(Err(ZoneCrossError::NoZoneLines)) => text(StatusCode::NOT_FOUND, "the zone has no zone line"),
-        None => text(StatusCode::SERVICE_UNAVAILABLE, "the driver did not answer"),
+    match c.zone_lines() {
+        Some(Ok(lines)) => Json(lines.iter().map(|l| json!({ "index": l.index, "pos": l.pos })).collect::<Vec<_>>()).into_response(),
+        Some(Err(ZoneLinesError::ZoneNotLoaded)) => text(StatusCode::CONFLICT, "the zone's collision is not loaded"),
+        Some(Err(ZoneLinesError::NoRegionData)) => text(StatusCode::CONFLICT, "the zone's region data is missing, so its zone lines are unknown"),
+        None => text(StatusCode::SERVICE_UNAVAILABLE, "no observation yet"),
     }
 }
 
@@ -594,25 +587,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn zone_cross_in_a_zone_that_did_not_load_is_409() {
-        let (obs_tx, obs_rx) = mpsc::channel();
-        let (step_tx, _step_rx) = mpsc::channel();
-        let control = Control::new(NavSlots::default());
-        driver::spawn(ChannelLink { observations: obs_rx, steps: step_tx }, control.clone(), Box::new(|_| None));
-        obs_tx.send(obs(vec![])).unwrap();
-        while control.latest().is_none() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        let feeder = std::thread::spawn(move || {
-            for _ in 0..200 {
-                if obs_tx.send(obs(vec![])).is_err() {
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(10));
-            }
-        });
-        let (code, body) = call(&control, "POST", "/v1/move/zone_cross", "{}").await;
+    async fn zone_lines_is_409_while_the_zone_is_not_loaded_and_503_before_any_observation() {
+        let c = Control::new(NavSlots::default());
+        assert_eq!(call(&c, "GET", "/v1/observe/zone_lines", "").await.0, StatusCode::SERVICE_UNAVAILABLE);
+        let (c, mut drv) = session(obs(vec![]));
+        drv.tick(&obs(vec![]));
+        let (code, body) = call(&c, "GET", "/v1/observe/zone_lines", "").await;
         assert_eq!(code, StatusCode::CONFLICT, "{body}");
-        feeder.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn zone_cross_is_no_longer_a_route() {
+        let (c, _) = session(obs(vec![]));
+        assert_eq!(call(&c, "POST", "/v1/move/zone_cross", "{}").await.0, StatusCode::NOT_FOUND);
     }
 }

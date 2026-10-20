@@ -18,10 +18,12 @@ This repo bootstraps the reference agent harness described in eqoxide's
   owns the socket, answers every `Observation` with one `Step`, and runs `harness-nav`'s walker and
   `harness-combat`'s engage driver. Route handlers only publish intent to it. Served, at the same
   `/v1/<group>/<action>` paths eqoxide's own HTTP API used:
-  - `move`: `goto`, `follow`, `stop`, `zone_cross` (takes `line`, not `zone_id`), `manual`, `jump`
+  - `move`: `goto`, `follow`, `stop`, `manual`, `jump`
   - `combat`: `target`, `target/name`, `attack` (`POST` and `DELETE`), `consider`, `cast`
   - `interact`: `sit`, `stand`. `lifecycle`: `respawn`
-  - `observe`: `state` (the whole `Observation`), `entities`, `nav` (goal status and walker notices)
+  - `observe`: `state` (the whole `Observation`), `entities`, `nav` (goal status and walker notices),
+    `zone_lines` (each zone line's index and a standable point). There is no cross route: walk to a
+    line with `goto` and eqoxide fires the crossing itself.
   - `GET /health`
 - **`crates/harness-combat/examples/chase_nearest_npc.rs`**: a worked, buildable example
   combining `harness-socket` and `harness-combat` the way a real caller would: connect, watch for
@@ -38,9 +40,8 @@ This repo bootstraps the reference agent harness described in eqoxide's
   packet observe routes). The Agent Plugin API carries no verb or observation for them yet:
   `AgentVerb`'s `Merchant`, `Inventory`, `Quests` and `Chat` groups are empty enums, and
   `Observation` has no door, zone-point or message data. Each route group returns to this repo
-  as the protocol grows its verb. Two routes differ from eqoxide's: `zone_cross` names a zone
-  line by `line` index because `Observation` carries no zone points to resolve a `zone_id`, and
-  `manual` cancels any nav goal instead of yielding to keyboard input.
+  as the protocol grows its verb. Two routes differ from eqoxide's: `zone_cross` is gone, because crossing is passive, and `manual`
+  cancels any nav goal instead of yielding to keyboard input.
 - **A checked-in test `.glb` fixture** for `harness-nav`'s `load_zone` itself. Today `load_zone`'s
   own test only checks the not-found-path error case. Eqoxide's `test_ready()` fixture covers the
   "does it actually build a real `Collision`" case indirectly, bypassing `from_glb` entirely.

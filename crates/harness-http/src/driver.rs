@@ -10,11 +10,11 @@ use eqoxide_zone_geometry::collision::Collision;
 use harness_combat::engage::engage;
 use harness_nav::diagnostics::NavDebugView;
 use harness_nav::status::{nav_state_is_terminal, NavSlots, NavStatus};
-use harness_nav::walker::{Walker, ZoneCrossError};
+use harness_nav::walker::{Walker, ZoneLine, ZoneLinesError};
 use harness_socket::{AgentClient, ClientError};
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -44,17 +44,12 @@ struct Manual {
     until: Instant,
 }
 
-struct CrossRequest {
-    line: Option<i32>,
-    reply: Sender<Result<u64, ZoneCrossError>>,
-}
-
 #[derive(Default)]
 struct Inner {
     latest: Option<Observation>,
     manual: Option<Manual>,
     verbs: VecDeque<AgentVerb>,
-    crosses: VecDeque<CrossRequest>,
+    zone_lines: Option<Result<Vec<ZoneLine>, ZoneLinesError>>,
     notices: Vec<String>,
     ended: Option<String>,
 }
@@ -107,12 +102,9 @@ impl Control {
         self.inner.lock().unwrap().verbs.push_back(verb);
     }
 
-    /// Asks the driver to start a walk to a zone line and waits for its answer, `None` when the
-    /// session ends first.
-    pub fn zone_cross(&self, line: Option<i32>) -> Option<Result<u64, ZoneCrossError>> {
-        let (reply, answer) = mpsc::channel();
-        self.inner.lock().unwrap().crosses.push_back(CrossRequest { line, reply });
-        answer.recv_timeout(Duration::from_secs(10)).ok()
+    /// The zone lines of the zone the character is in, or `None` before the first observation.
+    pub fn zone_lines(&self) -> Option<Result<Vec<ZoneLine>, ZoneLinesError>> {
+        self.inner.lock().unwrap().zone_lines.clone()
     }
 
     pub(crate) fn publish(&self, obs: &Observation) {
@@ -120,9 +112,7 @@ impl Control {
     }
 
     fn end(&self, why: String) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.ended = Some(why);
-        inner.crosses.clear();
+        self.inner.lock().unwrap().ended = Some(why);
     }
 }
 
@@ -159,7 +149,6 @@ impl Driver {
     /// Answers `obs` with one `Step`.
     pub fn tick(&mut self, obs: &Observation) -> Step {
         self.sync_zone(obs);
-        self.serve_crosses(obs);
         let movement = self.movement(obs);
         let notices = self.walker.take_notices();
         let mut inner = self.control.inner.lock().unwrap();
@@ -178,13 +167,8 @@ impl Driver {
             None => self.walker.clear_zone(),
         }
         self.loaded_zone = Some(zone.to_string());
-    }
-
-    fn serve_crosses(&mut self, obs: &Observation) {
-        let pending: Vec<CrossRequest> = self.control.inner.lock().unwrap().crosses.drain(..).collect();
-        for req in pending {
-            let _ = req.reply.send(self.walker.zone_cross(obs.own.pos, req.line));
-        }
+        let lines = self.walker.zone_lines(obs.own.pos);
+        self.control.inner.lock().unwrap().zone_lines = Some(lines);
     }
 
     /// The movement for this tick. A latched movement keeps applying on the eqoxide side, so the

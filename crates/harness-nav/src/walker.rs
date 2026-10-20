@@ -60,12 +60,19 @@ pub fn classify_ledge_fall(drop_u: f32, cur_hp: i32) -> LedgeFallVerdict {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ZoneCrossError {
+pub enum ZoneLinesError {
     ZoneNotLoaded,
-    /// The zone's region data (`.wtr`) is missing or unreadable, so its exits are unknown. Not the
-    /// same claim as "this zone has no exits".
+    /// The zone's region data (`.wtr`) is missing or unreadable, so its zone lines are unknown.
+    /// Not the same claim as "this zone has no zone lines", which is an empty list.
     NoRegionData,
-    NoZoneLines,
+}
+
+/// A zone-line region and the standable point to walk to in order to stand inside it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoneLine {
+    /// Region index from the zone's region data.
+    pub index: i32,
+    pub pos: [f32; 3],
 }
 
 /// Everything about the committed route needed to re-derive the published `nav_state` each tick.
@@ -214,23 +221,20 @@ impl Walker {
         self.collision = None;
     }
 
-    /// Walk to the zone line nearest `from`, where eqoxide's passive zone-line crossing fires once
-    /// the character stands in it. Returns the new goal id. Crossing is not a verb: eqoxide sends
-    /// the zone change itself, so a successful cross shows up as a changed `zone_name`, which
-    /// drops the goal.
+    /// Lists the zone lines of the loaded zone, each with the standable point nearest `from`.
+    /// Crossing is not a verb: eqoxide sends the zone change itself once the character stands in
+    /// a line, so a caller crosses by walking to `pos`, and a successful cross shows up as a
+    /// changed `zone_name`, which drops the goal.
     ///
-    /// `line` is a zone-line region index from the zone's region data; `None` picks the nearest.
     /// `Observation` carries no zone points, so the harness cannot tell which line leads where, or
-    /// which lines eqoxide refuses to cross (the nearest line in a zone with teleport pads can be
-    /// one): naming a line is how the caller steers around that.
-    pub fn zone_cross(&mut self, from: [f32; 3], line: Option<i32>) -> Result<u64, ZoneCrossError> {
-        let col = self.collision.clone().ok_or(ZoneCrossError::ZoneNotLoaded)?;
-        let lines = col.zone_line_indices().map_err(|_| ZoneCrossError::NoRegionData)?;
-        if lines.is_empty() {
-            return Err(ZoneCrossError::NoZoneLines);
-        }
-        let (_, p) = col.find_zone_line_near(line, from).ok_or(ZoneCrossError::NoZoneLines)?;
-        Ok(self.slots.goto((p[0], p[1], p[2])))
+    /// which lines eqoxide refuses to cross (a zone with teleport pads has lines that are pads).
+    pub fn zone_lines(&self, from: [f32; 3]) -> Result<Vec<ZoneLine>, ZoneLinesError> {
+        let col = self.collision.as_ref().ok_or(ZoneLinesError::ZoneNotLoaded)?;
+        let indices = col.zone_line_indices().map_err(|_| ZoneLinesError::NoRegionData)?;
+        Ok(indices
+            .into_iter()
+            .filter_map(|index| col.find_zone_line_near(Some(index), from).map(|(_, pos)| ZoneLine { index, pos }))
+            .collect())
     }
 
     /// Advance one tick and return the movement to latch, if any.
@@ -1128,25 +1132,24 @@ mod tests {
     }
 
     #[test]
-    fn zone_cross_walks_to_the_nearest_zone_line() {
+    fn zone_lines_lists_each_line_with_a_point_inside_it() {
         use eqoxide_core::region_map::RegionMap;
         let mut c = Arc::try_unwrap(flat_floor()).ok().unwrap();
         c.set_water(Some(Arc::new(RegionMap::zone_line_box(-5.0, 5.0, 100.0, 110.0, -2.0, 2.0, 7))));
         let mut w = Walker::new(NavSlots::default(), NavDebugView::default());
         w.set_zone(ZONE, Arc::new(c));
-        w.zone_cross([0.0, 0.0, 0.0], None).expect("a line exists");
-        let goal = w.slots().goto_target.lock().unwrap().unwrap();
-        assert!(goal.0 > 99.0 && goal.0 < 111.0, "goal should be inside the line, got {goal:?}");
-        let m = tick_until_moving(&mut w, &obs([0.0, 0.0, 0.0]));
-        assert!(m.dir[0] > 0.9);
+        let lines = w.zone_lines([0.0, 0.0, 0.0]).expect("region data is present");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].index, 7);
+        assert!(lines[0].pos[0] > 99.0 && lines[0].pos[0] < 111.0, "point should be inside the line, got {:?}", lines[0].pos);
     }
 
     #[test]
-    fn zone_cross_says_why_it_cannot() {
+    fn zone_lines_says_why_it_cannot() {
         let mut w = Walker::new(NavSlots::default(), NavDebugView::default());
-        assert_eq!(w.zone_cross([0.0; 3], None), Err(ZoneCrossError::ZoneNotLoaded));
+        assert_eq!(w.zone_lines([0.0; 3]), Err(ZoneLinesError::ZoneNotLoaded));
         w.set_zone(ZONE, flat_floor());
-        assert_eq!(w.zone_cross([0.0; 3], None), Err(ZoneCrossError::NoRegionData));
+        assert_eq!(w.zone_lines([0.0; 3]), Err(ZoneLinesError::NoRegionData));
     }
 
     #[test]
