@@ -380,11 +380,16 @@ name = "harness-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "eqoxide-agent-protocol",
+ "eqoxide-zone-geometry",
+ "harness-combat",
+ "harness-nav",
  "harness-socket",
  "serde",
  "serde_json",
  "tokio",
  "tower 0.4.13",
+ "tracing",
 ]
 
 [[package]]

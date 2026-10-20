@@ -17,9 +17,9 @@ character with `Step` and `Observation`.
 ## Status
 
 This repo is a **bootstrap**: each crate below has one small, real, tested vertical slice. Full
-A* planner porting (`harness-nav`) and full HTTP route porting (`harness-http`) are tracked as
-follow-up work — see [`docs/scope.md`](docs/scope.md) for exactly what's implemented today versus
-deferred.
+The A* nav stack (`harness-nav`) and the HTTP control routes for movement, combat and interact
+(`harness-http`) are ported. See [`docs/scope.md`](docs/scope.md) for what is implemented and what
+is deferred.
 
 ## Crates
 
@@ -28,7 +28,7 @@ deferred.
 | `harness-socket` | Agent Plugin API client: handshake, send `Step`, receive `Observation` |
 | `harness-nav` | Zone geometry loading, built on eqoxide's shared `eqoxide-zone-geometry` crate |
 | `harness-combat` | Chase-and-face-while-engaged, computed from raw `Observation` data |
-| `harness-http` | Optional HTTP convenience wrapper around `harness-socket` |
+| `harness-http` | Optional HTTP control API: drives eqoxide through `harness-socket`, `harness-nav` and `harness-combat` |
 
 ## Running against a live eqoxide instance
 
@@ -37,7 +37,7 @@ deferred.
 cargo run -- --testzone --agent-socket /tmp/eqoxide-agent.sock
 
 # in this repo
-cargo run -p harness-http
+cargo run -p harness-http -- /tmp/eqoxide-agent.sock    # serves http://127.0.0.1:8090
 ```
 
 ## Dependency pinning
