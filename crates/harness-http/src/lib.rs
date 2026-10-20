@@ -1,8 +1,12 @@
 //! Optional HTTP convenience wrapper around harness-socket (eqoxide spec §10). This wrapper
 //! talks to harness-socket, never to eqoxide directly.
 //!
-//! Only a `/health` route exists so far. Real socket-backed routes (movement, combat verbs,
-//! observation polling) remain unimplemented. See docs/scope.md.
+//! It serves the agent control routes eqoxide's own HTTP API used to carry: movement, navigation,
+//! combat and interact verbs, and the observations that go with them. Routes queue intent for the
+//! [`driver`], the only code that touches the socket. See docs/scope.md for what is not served.
+
+pub mod driver;
+mod routes;
 
 use axum::routing::get;
 use axum::{Json, Router};
@@ -19,8 +23,9 @@ async fn health() -> Json<Health> {
     })
 }
 
-pub fn router() -> Router {
-    Router::new().route("/health", get(health))
+/// The control routes and `GET /health`, answering from `control`.
+pub fn router(control: std::sync::Arc<driver::Control>) -> Router {
+    routes::router().route("/health", get(health)).with_state(control)
 }
 
 #[cfg(test)]
@@ -30,7 +35,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_returns_200_and_ok_status() {
-        let app = router();
+        let app = router(driver::Control::new(harness_nav::status::NavSlots::default()));
         let response = app
             .oneshot(
                 axum::http::Request::builder()
