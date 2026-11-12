@@ -75,7 +75,9 @@ where
     }
 }
 
-/// The latest observation, or the refusal for a session that has none or has ended.
+/// The latest observation, or the refusal for a session that has none or has ended. The `Err` is
+/// the ready-to-send response, which handlers return as-is.
+#[allow(clippy::result_large_err)]
 fn live(c: &Control) -> Result<Observation, Response> {
     if let Some(why) = c.ended() {
         return Err(text(StatusCode::SERVICE_UNAVAILABLE, format!("no live session: {why}")));
@@ -84,6 +86,7 @@ fn live(c: &Control) -> Result<Observation, Response> {
 }
 
 /// As [`live`], and refuses while the character is dead.
+#[allow(clippy::result_large_err)]
 fn live_alive(c: &Control) -> Result<Observation, Response> {
     let obs = live(c)?;
     if obs.dead {
@@ -169,7 +172,7 @@ fn apply_avoid(c: &Control, enabled: Option<bool>, buffer: Option<f32>) {
     c.slots().set_avoid(AggroAvoidOpts { enabled: enabled.unwrap_or(current.enabled), buffer: buffer.unwrap_or(current.buffer) });
 }
 
-fn target_entity<'a>(obs: &'a Observation) -> Option<&'a VisibleEntity> {
+fn target_entity(obs: &Observation) -> Option<&VisibleEntity> {
     let id = obs.own.target_id?;
     obs.visible.iter().find(|e| e.spawn_id == id)
 }

@@ -85,7 +85,7 @@ fn main() {
         last = client.recv_observation().expect("observation");
         step(&mut client, &mut walker, &last);
         let st = walker.slots().status();
-        if last.tick % 20 == 0 {
+        if last.tick.is_multiple_of(20) {
             println!("tick {}: {} at {:?}, {:.0} to go", last.tick, st.state, last.own.pos, dist(goal, last.own.pos));
         }
         if nav_state_is_terminal(&st.state) {
@@ -132,7 +132,7 @@ fn main() {
             finish(&mut client, 0);
         }
         step(&mut client, &mut walker, &last);
-        if last.tick % 20 == 0 {
+        if last.tick.is_multiple_of(20) {
             println!("tick {}: {} at {:?}", last.tick, walker.slots().status().state, last.own.pos);
         }
         // eqoxide fires the crossing itself once the character stands in the line, and the server
