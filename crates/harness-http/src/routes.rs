@@ -99,7 +99,10 @@ fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
 /// The visible spawn `name` resolves to: a live exact match, then a live substring match, then
 /// the same two among corpses. Ties go to the nearest.
 fn resolve<'a>(obs: &'a Observation, name: &str) -> Option<&'a VisibleEntity> {
-    let needle = name.to_lowercase();
+    let needle = name.trim().to_lowercase();
+    if needle.is_empty() {
+        return None;
+    }
     let nearest = |pred: &dyn Fn(&VisibleEntity) -> bool| {
         obs.visible.iter().filter(|e| pred(e)).min_by(|a, b| dist(a.pos, obs.own.pos).total_cmp(&dist(b.pos, obs.own.pos)))
     };
@@ -141,7 +144,7 @@ fn nav_json(s: &NavStatus, notices: Vec<String>) -> Value {
 }
 
 async fn observe_nav(State(c): State<Ctl>) -> Response {
-    Json(nav_json(&c.nav_status(), c.take_notices())).into_response()
+    Json(nav_json(&c.nav_status(), c.recent_notices())).into_response()
 }
 
 #[derive(Deserialize, Default)]
@@ -182,7 +185,7 @@ async fn goto(State(c): State<Ctl>, Body(b): Body<GotoBody>) -> Response {
     if b.name.is_some() && (have_raw + have_map) > 0 {
         return bad("conflicting target: give a name or coordinates, not both");
     }
-    if have_raw == 3 && have_map > 0 {
+    if (b.x.is_some() || b.y.is_some()) && have_map > 0 {
         return bad("conflicting target: give raw {x,y,z} or {map_x,map_y}, not both");
     }
     let (goal, entity): ((f32, f32, f32), Option<&VisibleEntity>) = if let Some(name) = &b.name {
@@ -298,7 +301,11 @@ async fn manual(State(c): State<Ctl>, Body(b): Body<ManualBody>) -> Response {
     if dir == [0.0, 0.0] && up == 0.0 && !jump {
         return bad("provide a direction {east,north}, {up:-1..1} (swim), and/or {\"jump\":true}");
     }
-    manual_move(&c, AgentMovement { dir, up, jump, wish_heading: None }, b.duration_ms.unwrap_or(MANUAL_DEFAULT_MS))
+    let ms = b.duration_ms.unwrap_or(MANUAL_DEFAULT_MS);
+    if ms == 0 {
+        return bad("duration_ms must be at least 1");
+    }
+    manual_move(&c, AgentMovement { dir, up, jump, wish_heading: None }, ms)
 }
 
 async fn jump(State(c): State<Ctl>) -> Response {
@@ -313,7 +320,9 @@ async fn jump(State(c): State<Ctl>) -> Response {
 }
 
 fn queue(c: &Control, verb: AgentVerb, ok: impl Into<String>) -> Response {
-    c.push_verb(verb);
+    if !c.push_verb(verb) {
+        return text(StatusCode::TOO_MANY_REQUESTS, "too many verbs queued; nothing was queued");
+    }
     text(StatusCode::OK, ok)
 }
 
@@ -350,7 +359,9 @@ async fn target_name(State(c): State<Ctl>, Body(b): Body<NameBody>) -> Response 
     let Some(e) = resolve(&obs, &name) else {
         return text(StatusCode::NOT_FOUND, format!("no visible entity matching '{name}'"));
     };
-    c.push_verb(AgentVerb::Combat(CombatVerb::Target { spawn_id: e.spawn_id }));
+    if !c.push_verb(AgentVerb::Combat(CombatVerb::Target { spawn_id: e.spawn_id })) {
+        return text(StatusCode::TOO_MANY_REQUESTS, "too many verbs queued; nothing was queued");
+    }
     Json(json!({ "matched": matched(e) })).into_response()
 }
 
@@ -538,11 +549,12 @@ mod tests {
     #[tokio::test]
     async fn a_manual_move_drives_then_stands_still() {
         let (c, mut drv) = session(obs(vec![]));
-        let (code, _) = call(&c, "POST", "/v1/move/manual", r#"{"east":1,"duration_ms":30}"#).await;
+        let (code, _) = call(&c, "POST", "/v1/move/manual", r#"{"east":1,"duration_ms":300}"#).await;
         assert_eq!(code, StatusCode::OK);
+        assert_eq!(call(&c, "POST", "/v1/move/manual", r#"{"east":1,"duration_ms":0}"#).await.0, StatusCode::BAD_REQUEST);
         let o = obs(vec![]);
         assert_eq!(drv.tick(&o).movement.unwrap().dir, [1.0, 0.0]);
-        std::thread::sleep(Duration::from_millis(60));
+        std::thread::sleep(Duration::from_millis(600));
         let stop = drv.tick(&o).movement.unwrap();
         assert_eq!((stop.dir, stop.jump), ([0.0, 0.0], false));
         assert_eq!(drv.tick(&o).movement, None);
@@ -594,6 +606,27 @@ mod tests {
         drv.tick(&obs(vec![]));
         let (code, body) = call(&c, "GET", "/v1/observe/zone_lines", "").await;
         assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    }
+
+    #[tokio::test]
+    async fn a_blank_name_matches_nothing_and_partial_raw_plus_map_is_a_conflict() {
+        let (c, _) = session(obs(vec![entity(1, "a_rat00", [1.0, 0.0, 0.0], false)]));
+        assert_eq!(call(&c, "POST", "/v1/combat/target/name", r#"{"name":"  "}"#).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(call(&c, "POST", "/v1/move/goto", r#"{"x":1,"map_x":2,"map_y":3}"#).await.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_verb_queue_is_bounded_and_dropped_on_death() {
+        let (c, mut drv) = session(obs(vec![entity(7, "a_rat00", [5.0, 0.0, 0.0], false)]));
+        for _ in 0..driver::MAX_QUEUED_VERBS {
+            assert_eq!(call(&c, "POST", "/v1/combat/attack", "").await.0, StatusCode::OK);
+        }
+        assert_eq!(call(&c, "POST", "/v1/combat/attack", "").await.0, StatusCode::TOO_MANY_REQUESTS);
+        drv.tick(&obs(vec![]));
+        let mut dead = obs(vec![]);
+        dead.dead = true;
+        assert_eq!(drv.tick(&dead).verb, None);
+        assert_eq!(drv.tick(&obs(vec![])).verb, None);
     }
 
     #[tokio::test]

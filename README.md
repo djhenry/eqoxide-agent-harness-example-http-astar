@@ -16,8 +16,7 @@ character with `Step` and `Observation`.
 
 ## Status
 
-This repo is a **bootstrap**: each crate below has one small, real, tested vertical slice. Full
-The A* nav stack (`harness-nav`) and the HTTP control routes for movement, combat and interact
+This repo is a **bootstrap**: each crate below has one small, real, tested vertical slice. The A* nav stack (`harness-nav`) and the HTTP control routes for movement, combat and interact
 (`harness-http`) are ported. See [`docs/scope.md`](docs/scope.md) for what is implemented and what
 is deferred.
 

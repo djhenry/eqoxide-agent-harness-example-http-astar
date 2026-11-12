@@ -14,6 +14,7 @@ use harness_nav::walker::{Walker, ZoneLine, ZoneLinesError};
 use harness_socket::{AgentClient, ClientError};
 use std::collections::VecDeque;
 use std::path::PathBuf;
+#[cfg(test)]
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -50,9 +51,18 @@ struct Inner {
     manual: Option<Manual>,
     verbs: VecDeque<AgentVerb>,
     zone_lines: Option<Result<Vec<ZoneLine>, ZoneLinesError>>,
-    notices: Vec<String>,
+    notices: VecDeque<String>,
     ended: Option<String>,
 }
+
+/// Most verbs that may wait for a `Step`.
+pub const MAX_QUEUED_VERBS: usize = 16;
+
+/// Most walker notices kept for `GET /v1/observe/nav`.
+pub const MAX_NOTICES: usize = 32;
+
+/// Shortest wait before a zone whose collision failed to load is tried again.
+const ZONE_RETRY: Duration = Duration::from_secs(5);
 
 /// State shared between the driver thread and the route handlers.
 pub struct Control {
@@ -83,10 +93,11 @@ impl Control {
         self.slots.status()
     }
 
-    /// Messages the walker raised since the last call (a goal that was changed, a stop that needs
-    /// explaining).
-    pub fn take_notices(&self) -> Vec<String> {
-        std::mem::take(&mut self.inner.lock().unwrap().notices)
+    /// The most recent messages the walker raised (a goal that was changed, a stop that needs
+    /// explaining), oldest first. Reading does not consume them, so concurrent pollers each see
+    /// them; only the newest [`MAX_NOTICES`] are kept.
+    pub fn recent_notices(&self) -> Vec<String> {
+        self.inner.lock().unwrap().notices.iter().cloned().collect()
     }
 
     /// Drives the character with `movement` for `duration`, replacing any nav goal and any earlier
@@ -97,9 +108,15 @@ impl Control {
         self.inner.lock().unwrap().manual = Some(Manual { movement, until });
     }
 
-    /// Queues one verb. The driver sends one verb per `Step`, oldest first.
-    pub fn push_verb(&self, verb: AgentVerb) {
-        self.inner.lock().unwrap().verbs.push_back(verb);
+    /// Queues one verb. The driver sends one verb per `Step`, oldest first. `false` when
+    /// [`MAX_QUEUED_VERBS`] are already waiting; nothing is queued then.
+    pub fn push_verb(&self, verb: AgentVerb) -> bool {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.verbs.len() >= MAX_QUEUED_VERBS {
+            return false;
+        }
+        inner.verbs.push_back(verb);
+        true
     }
 
     /// The zone lines of the zone the character is in, or `None` before the first observation.
@@ -136,6 +153,11 @@ pub struct Driver {
     walker: Walker,
     loader: ZoneLoader,
     loaded_zone: Option<String>,
+    /// The zone a load was last attempted for, and when; a failed load is retried after
+    /// [`ZONE_RETRY`] rather than every tick.
+    last_attempt: Option<(String, Instant)>,
+    /// Death state seen on the previous tick, to drop verbs queued before a death or respawn.
+    last_dead: bool,
     manual_active: bool,
     engaging: bool,
 }
@@ -143,32 +165,58 @@ pub struct Driver {
 impl Driver {
     pub fn new(control: Arc<Control>, loader: ZoneLoader) -> Self {
         let walker = Walker::new(control.slots.clone(), NavDebugView::default());
-        Driver { control, walker, loader, loaded_zone: None, manual_active: false, engaging: false }
+        Driver { control, walker, loader, loaded_zone: None, last_attempt: None, last_dead: false, manual_active: false, engaging: false }
     }
 
     /// Answers `obs` with one `Step`.
     pub fn tick(&mut self, obs: &Observation) -> Step {
-        self.sync_zone(obs);
+        let zone_changed = self.sync_zone(obs);
+        // Verbs queued against the old zone, or before a death or respawn, no longer mean what
+        // the caller intended.
+        let stale = zone_changed || obs.dead != self.last_dead;
+        self.last_dead = obs.dead;
         let movement = self.movement(obs);
         let notices = self.walker.take_notices();
         let mut inner = self.control.inner.lock().unwrap();
-        inner.notices.extend(notices);
+        for n in notices {
+            if inner.notices.len() >= MAX_NOTICES {
+                inner.notices.pop_front();
+            }
+            inner.notices.push_back(n);
+        }
+        if stale {
+            inner.verbs.clear();
+        }
         let verb = inner.verbs.pop_front();
         Step { movement, verb }
     }
 
-    fn sync_zone(&mut self, obs: &Observation) {
+    /// Loads the collision of the zone `obs` is in. A zone that fails to load is not recorded as
+    /// loaded, so it is retried after [`ZONE_RETRY`]. Returns whether the character moved to a
+    /// different zone since the last attempt.
+    fn sync_zone(&mut self, obs: &Observation) -> bool {
         let zone = obs.own.zone_name.as_str();
         if self.loaded_zone.as_deref() == Some(zone) {
-            return;
+            return false;
         }
+        let same_zone = self.last_attempt.as_ref().is_some_and(|(z, _)| z == zone);
+        if same_zone && self.last_attempt.as_ref().is_some_and(|(_, at)| at.elapsed() < ZONE_RETRY) {
+            return false;
+        }
+        // The first zone of a session is not a change.
+        let changed = self.last_attempt.is_some() && !same_zone;
+        self.last_attempt = Some((zone.to_string(), Instant::now()));
         match (self.loader)(zone) {
-            Some(collision) => self.walker.set_zone(zone, collision),
+            Some(collision) => {
+                self.walker.set_zone(zone, collision);
+                self.loaded_zone = Some(zone.to_string());
+            }
             None => self.walker.clear_zone(),
         }
-        self.loaded_zone = Some(zone.to_string());
+        // Zone lines are fixed points of the zone, computed once per load attempt.
         let lines = self.walker.zone_lines(obs.own.pos);
         self.control.inner.lock().unwrap().zone_lines = Some(lines);
+        changed
     }
 
     /// The movement for this tick. A latched movement keeps applying on the eqoxide side, so the
@@ -187,6 +235,7 @@ impl Driver {
         };
         if let Some(m) = manual {
             self.manual_active = true;
+            self.engaging = false;
             return Some(m);
         }
         if self.manual_active {
@@ -238,11 +287,13 @@ pub fn spawn(link: impl Link, control: Arc<Control>, loader: ZoneLoader) -> std:
 }
 
 /// A `Link` fed from a channel, for tests.
+#[cfg(test)]
 pub struct ChannelLink {
     pub observations: Receiver<Observation>,
     pub steps: Sender<Step>,
 }
 
+#[cfg(test)]
 impl Link for ChannelLink {
     fn recv_observation(&mut self) -> Result<Observation, ClientError> {
         self.observations.recv().map_err(|_| ClientError::ConnectionClosed)
