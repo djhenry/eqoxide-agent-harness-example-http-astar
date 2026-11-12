@@ -8,14 +8,14 @@
 //! cargo run --release -p harness-nav --example live_goto -- /tmp/eqoxide-agent.sock <spawn-name> [--cross [--line N]]
 //! ```
 
-use harness_nav::status::nav_state_is_terminal;
-use harness_nav::diagnostics::NavDebugView;
-use harness_nav::walker::Walker;
-use harness_nav::{status::NavSlots, zone::load_zone_from_cache};
-use harness_socket::AgentClient;
 use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::Observation;
 use eqoxide_agent_protocol::step::Step;
+use harness_nav::diagnostics::NavDebugView;
+use harness_nav::status::nav_state_is_terminal;
+use harness_nav::walker::Walker;
+use harness_nav::{status::NavSlots, zone::load_zone_from_cache};
+use harness_socket::AgentClient;
 use std::sync::Arc;
 
 const MAX_TICKS: u32 = 4000;
@@ -28,8 +28,16 @@ fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
 
 /// Movement latches on the eqoxide side, so leave the character standing, not mid-stride.
 fn finish(client: &mut AgentClient, code: i32) -> ! {
-    let stop = AgentMovement { dir: [0.0, 0.0], up: 0.0, jump: false, wish_heading: None };
-    let _ = client.send_step(&Step { movement: Some(stop), verb: None });
+    let stop = AgentMovement {
+        dir: [0.0, 0.0],
+        up: 0.0,
+        jump: false,
+        wish_heading: None,
+    };
+    let _ = client.send_step(&Step {
+        movement: Some(stop),
+        verb: None,
+    });
     std::process::exit(code);
 }
 
@@ -38,7 +46,12 @@ fn step(client: &mut AgentClient, walker: &mut Walker, obs: &Observation) {
     for n in walker.take_notices() {
         println!("tick {}: notice: {n}", obs.tick);
     }
-    client.send_step(&Step { movement, verb: None }).expect("send step");
+    client
+        .send_step(&Step {
+            movement,
+            verb: None,
+        })
+        .expect("send step");
 }
 
 fn main() {
@@ -49,7 +62,11 @@ fn main() {
     };
     let rest: Vec<String> = args.collect();
     let cross = rest.first().map(String::as_str) == Some("--cross");
-    let line: Option<i32> = rest.iter().position(|a| a == "--line").and_then(|i| rest.get(i + 1)).map(|v| v.parse().expect("--line takes a zone-line index"));
+    let line: Option<i32> = rest
+        .iter()
+        .position(|a| a == "--line")
+        .and_then(|i| rest.get(i + 1))
+        .map(|v| v.parse().expect("--line takes a zone-line index"));
 
     let mut client = AgentClient::connect(&socket).expect("connect + handshake");
     let cache = client.asset_cache_dir().to_path_buf();
@@ -65,40 +82,58 @@ fn main() {
     // `-` skips the goto and zone-crosses from where the character stands.
     let mut last = obs.clone();
     if name != "-" {
-    let needle = name.to_lowercase();
-    let target = obs
-        .visible
-        .iter()
-        .filter(|e| !e.dead && e.name.to_lowercase().contains(&needle))
-        .min_by(|a, b| dist(a.pos, obs.own.pos).total_cmp(&dist(b.pos, obs.own.pos)))
-        .unwrap_or_else(|| {
-            let seen: Vec<_> = obs.visible.iter().map(|e| format!("{} {:?}", e.name, e.pos)).collect();
-            eprintln!("FAIL: no visible live spawn matching '{name}'; visible: {seen:?}");
-            std::process::exit(1);
-        });
-    let goal = target.pos;
-    println!("goto {} at {:?} ({:.0} away)", target.name, goal, dist(goal, obs.own.pos));
-    walker.slots().goto((goal[0], goal[1], goal[2]));
-    step(&mut client, &mut walker, &obs);
+        let needle = name.to_lowercase();
+        let target = obs
+            .visible
+            .iter()
+            .filter(|e| !e.dead && e.name.to_lowercase().contains(&needle))
+            .min_by(|a, b| dist(a.pos, obs.own.pos).total_cmp(&dist(b.pos, obs.own.pos)))
+            .unwrap_or_else(|| {
+                let seen: Vec<_> = obs
+                    .visible
+                    .iter()
+                    .map(|e| format!("{} {:?}", e.name, e.pos))
+                    .collect();
+                eprintln!("FAIL: no visible live spawn matching '{name}'; visible: {seen:?}");
+                std::process::exit(1);
+            });
+        let goal = target.pos;
+        println!(
+            "goto {} at {:?} ({:.0} away)",
+            target.name,
+            goal,
+            dist(goal, obs.own.pos)
+        );
+        walker.slots().goto((goal[0], goal[1], goal[2]));
+        step(&mut client, &mut walker, &obs);
 
-    for _ in 0..MAX_TICKS {
-        last = client.recv_observation().expect("observation");
-        step(&mut client, &mut walker, &last);
-        let st = walker.slots().status();
-        if last.tick.is_multiple_of(20) {
-            println!("tick {}: {} at {:?}, {:.0} to go", last.tick, st.state, last.own.pos, dist(goal, last.own.pos));
+        for _ in 0..MAX_TICKS {
+            last = client.recv_observation().expect("observation");
+            step(&mut client, &mut walker, &last);
+            let st = walker.slots().status();
+            if last.tick.is_multiple_of(20) {
+                println!(
+                    "tick {}: {} at {:?}, {:.0} to go",
+                    last.tick,
+                    st.state,
+                    last.own.pos,
+                    dist(goal, last.own.pos)
+                );
+            }
+            if nav_state_is_terminal(&st.state) {
+                break;
+            }
         }
-        if nav_state_is_terminal(&st.state) {
-            break;
+        let state = walker.slots().status().state;
+        let left = dist(goal, last.own.pos);
+        let arrived = state == "arrived" || left <= ARRIVE_DIST;
+        println!(
+            "goto {}: state={state}, {left:.0} from the spawn",
+            if arrived { "OK" } else { "FAIL" }
+        );
+        if !arrived {
+            finish(&mut client, 1);
         }
-    }
-    let state = walker.slots().status().state;
-    let left = dist(goal, last.own.pos);
-    let arrived = state == "arrived" || left <= ARRIVE_DIST;
-    println!("goto {}: state={state}, {left:.0} from the spawn", if arrived { "OK" } else { "FAIL" });
-    if !arrived {
-        finish(&mut client, 1);
-    }
     }
 
     if !cross {
@@ -116,8 +151,13 @@ fn main() {
             eprintln!("FAIL: no zone line matching {line:?}; zone lines: {lines:?}");
             finish(&mut client, 1);
         });
-    let goal_id = walker.slots().goto((nearest.pos[0], nearest.pos[1], nearest.pos[2]));
-    println!("walking to zone line {} at {:?}, goal {goal_id}", nearest.index, nearest.pos);
+    let goal_id = walker
+        .slots()
+        .goto((nearest.pos[0], nearest.pos[1], nearest.pos[2]));
+    println!(
+        "walking to zone line {} at {:?}, goal {goal_id}",
+        nearest.index, nearest.pos
+    );
     let mut settled = 0;
     for _ in 0..MAX_TICKS {
         last = match client.recv_observation() {
@@ -133,7 +173,12 @@ fn main() {
         }
         step(&mut client, &mut walker, &last);
         if last.tick.is_multiple_of(20) {
-            println!("tick {}: {} at {:?}", last.tick, walker.slots().status().state, last.own.pos);
+            println!(
+                "tick {}: {} at {:?}",
+                last.tick,
+                walker.slots().status().state,
+                last.own.pos
+            );
         }
         // eqoxide fires the crossing itself once the character stands in the line, and the server
         // takes a moment to answer, so keep watching after the walk ends.
@@ -144,6 +189,10 @@ fn main() {
             }
         }
     }
-    eprintln!("FAIL: still in {zone}; at {:?}; status {:#?}", last.own.pos, walker.slots().status());
+    eprintln!(
+        "FAIL: still in {zone}; at {:?}; status {:#?}",
+        last.own.pos,
+        walker.slots().status()
+    );
     finish(&mut client, 1);
 }

@@ -7,9 +7,9 @@
 
 use eqoxide_assets::ZoneAssets;
 use eqoxide_core::region_map::RegionMap;
-use std::sync::Arc;
 use eqoxide_zone_geometry::collision::Collision;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Loads a zone's collision geometry from its asset GLB at `glb_path`, gridded at `cell_size`
 /// (world units per collision-grid cell).
@@ -34,8 +34,12 @@ pub fn zone_glb_path(asset_cache_dir: &Path, zone_name: &str) -> PathBuf {
 /// missing or unreadable region file is not an error: the grid records why it has none, and
 /// zone-line queries then report that rather than an empty answer.
 pub fn load_zone_from_cache(asset_cache_dir: &Path, zone_name: &str) -> anyhow::Result<Collision> {
-    let mut collision = load_zone(&zone_glb_path(asset_cache_dir, zone_name), EQOXIDE_CELL_SIZE)?;
-    let water = RegionMap::try_load(&asset_cache_dir.join("maps").join("water"), zone_name).map(Arc::new);
+    let mut collision = load_zone(
+        &zone_glb_path(asset_cache_dir, zone_name),
+        EQOXIDE_CELL_SIZE,
+    )?;
+    let water =
+        RegionMap::try_load(&asset_cache_dir.join("maps").join("water"), zone_name).map(Arc::new);
     if let Err(e) = &water {
         tracing::warn!("zone '{zone_name}' has no usable region data: {e}");
     }
@@ -49,7 +53,10 @@ mod tests {
 
     #[test]
     fn a_zone_is_looked_up_by_name_in_the_cache_dir() {
-        assert_eq!(zone_glb_path(Path::new("/cache/models"), "qeynos"), Path::new("/cache/models/qeynos.glb"));
+        assert_eq!(
+            zone_glb_path(Path::new("/cache/models"), "qeynos"),
+            Path::new("/cache/models/qeynos.glb")
+        );
         assert!(load_zone_from_cache(Path::new("/nonexistent"), "qeynos").is_err());
     }
 

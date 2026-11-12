@@ -4,8 +4,8 @@
 pub mod collision;
 pub mod diagnostics;
 pub mod planner;
-pub mod steering;
 pub mod status;
+pub mod steering;
 pub mod traversability;
 pub mod walker;
 pub mod zone;

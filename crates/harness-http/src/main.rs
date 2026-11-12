@@ -26,5 +26,7 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     println!("harness-http listening on http://{addr}, driving {socket}");
-    axum::serve(listener, harness_http::router(control)).await.unwrap();
+    axum::serve(listener, harness_http::router(control))
+        .await
+        .unwrap();
 }

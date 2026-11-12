@@ -25,7 +25,9 @@ async fn health() -> Json<Health> {
 
 /// The control routes and `GET /health`, answering from `control`.
 pub fn router(control: std::sync::Arc<driver::Control>) -> Router {
-    routes::router().route("/health", get(health)).with_state(control)
+    routes::router()
+        .route("/health", get(health))
+        .with_state(control)
 }
 
 #[cfg(test)]
@@ -35,7 +37,9 @@ mod tests {
 
     #[tokio::test]
     async fn health_returns_200_and_ok_status() {
-        let app = router(driver::Control::new(harness_nav::status::NavSlots::default()));
+        let app = router(driver::Control::new(
+            harness_nav::status::NavSlots::default(),
+        ));
         let response = app
             .oneshot(
                 axum::http::Request::builder()

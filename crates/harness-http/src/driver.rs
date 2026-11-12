@@ -38,7 +38,12 @@ impl Link for AgentClient {
 /// Longest `duration_ms` a manual move may request.
 pub const MANUAL_MAX_MS: u64 = 5000;
 
-const STAND_STILL: AgentMovement = AgentMovement { dir: [0.0, 0.0], up: 0.0, jump: false, wish_heading: None };
+const STAND_STILL: AgentMovement = AgentMovement {
+    dir: [0.0, 0.0],
+    up: 0.0,
+    jump: false,
+    wish_heading: None,
+};
 
 struct Manual {
     movement: AgentMovement,
@@ -72,7 +77,10 @@ pub struct Control {
 
 impl Control {
     pub fn new(slots: NavSlots) -> Arc<Self> {
-        Arc::new(Control { inner: Mutex::new(Inner::default()), slots })
+        Arc::new(Control {
+            inner: Mutex::new(Inner::default()),
+            slots,
+        })
     }
 
     pub fn slots(&self) -> &NavSlots {
@@ -153,13 +161,15 @@ pub type ZoneLoader = Box<dyn FnMut(&str) -> Option<Arc<Collision>> + Send>;
 
 /// A [`ZoneLoader`] that reads zones from eqoxide's asset cache.
 pub fn cache_loader(asset_cache_dir: PathBuf) -> ZoneLoader {
-    Box::new(move |zone| match harness_nav::zone::load_zone_from_cache(&asset_cache_dir, zone) {
-        Ok(c) => Some(Arc::new(c)),
-        Err(e) => {
-            tracing::warn!("zone '{zone}' not loaded: {e}");
-            None
-        }
-    })
+    Box::new(
+        move |zone| match harness_nav::zone::load_zone_from_cache(&asset_cache_dir, zone) {
+            Ok(c) => Some(Arc::new(c)),
+            Err(e) => {
+                tracing::warn!("zone '{zone}' not loaded: {e}");
+                None
+            }
+        },
+    )
 }
 
 /// Computes the `Step` that answers each `Observation`.
@@ -180,7 +190,16 @@ pub struct Driver {
 impl Driver {
     pub fn new(control: Arc<Control>, loader: ZoneLoader) -> Self {
         let walker = Walker::new(control.slots.clone(), NavDebugView::default());
-        Driver { control, walker, loader, loaded_zone: None, last_attempt: None, last_dead: false, manual_active: false, engaging: false }
+        Driver {
+            control,
+            walker,
+            loader,
+            loaded_zone: None,
+            last_attempt: None,
+            last_dead: false,
+            manual_active: false,
+            engaging: false,
+        }
     }
 
     /// Answers `obs` with one `Step`.
@@ -216,7 +235,12 @@ impl Driver {
             return false;
         }
         let same_zone = self.last_attempt.as_ref().is_some_and(|(z, _)| z == zone);
-        if same_zone && self.last_attempt.as_ref().is_some_and(|(_, at)| at.elapsed() < ZONE_RETRY) {
+        if same_zone
+            && self
+                .last_attempt
+                .as_ref()
+                .is_some_and(|(_, at)| at.elapsed() < ZONE_RETRY)
+        {
             return false;
         }
         // The first zone of a session is not a change.
@@ -300,7 +324,11 @@ pub fn run(mut link: impl Link, mut driver: Driver) {
 }
 
 /// Starts the driver on its own thread.
-pub fn spawn(link: impl Link, control: Arc<Control>, loader: ZoneLoader) -> std::thread::JoinHandle<()> {
+pub fn spawn(
+    link: impl Link,
+    control: Arc<Control>,
+    loader: ZoneLoader,
+) -> std::thread::JoinHandle<()> {
     let driver = Driver::new(control, loader);
     std::thread::spawn(move || run(link, driver))
 }
@@ -315,10 +343,14 @@ pub struct ChannelLink {
 #[cfg(test)]
 impl Link for ChannelLink {
     fn recv_observation(&mut self) -> Result<Observation, ClientError> {
-        self.observations.recv().map_err(|_| ClientError::ConnectionClosed)
+        self.observations
+            .recv()
+            .map_err(|_| ClientError::ConnectionClosed)
     }
 
     fn send_step(&mut self, step: &Step) -> Result<(), ClientError> {
-        self.steps.send(step.clone()).map_err(|_| ClientError::ConnectionClosed)
+        self.steps
+            .send(step.clone())
+            .map_err(|_| ClientError::ConnectionClosed)
     }
 }

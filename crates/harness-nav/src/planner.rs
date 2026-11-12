@@ -40,42 +40,42 @@
 //! goal we have since abandoned — is discarded, never applied.** Applying one would walk the
 //! character toward a goal nobody asked for, which is its own quiet lie.
 
-use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::collision::{CollisionAStar, LocalOutcome, NoRoute, PadEdge, PlanCtx, PlanOutcome};
-use eqoxide_zone_geometry::collision::Collision;
 use eqoxide_core::physics::PLAYER_RADIUS;
+use eqoxide_zone_geometry::collision::Collision;
 
 /// One plan the walker wants computed. Carries its own `Arc<Collision>` so the worker never touches
 /// the `SharedCollision` lock the net + render threads use.
 pub struct PlanRequest {
     /// Monotonic id. A reply is only applied if this still matches the ActionLoop's current request.
-    pub gen:          u64,
-    pub start:        [f32; 3],
-    pub goal:         [f32; 3],
+    pub gen: u64,
+    pub start: [f32; 3],
+    pub goal: [f32; 3],
     /// NPC positions to skirt (aggro avoidance, #67) and how wide a berth to give them (#242).
-    pub avoid:        Vec<[f32; 2]>,
+    pub avoid: Vec<[f32; 2]>,
     pub aggro_buffer: f32,
     /// Zone-point index of the DRNTP region we're routing to, when the goal is a zone line (#229).
-    pub goal_region:  Option<i32>,
+    pub goal_region: Option<i32>,
     /// Intra-zone teleport-pad edges for this zone (#403): resolved same-zone DRNTP translocators A*
     /// may route THROUGH. Built by the walker from `OP_SendZonepoints` (`resolve_teleport_pads`), so
     /// only pads with a real advertised same-zone destination on walkable floor are present. Empty in
     /// the common case (no same-zone pads).
     pub teleport_pads: Vec<PadEdge>,
-    pub collision:    Arc<Collision>,
+    pub collision: Arc<Collision>,
 }
 
 /// A finished plan, tagged with the generation it answers.
 pub struct PlanReply {
-    pub gen:     u64,
+    pub gen: u64,
     /// The START and GOAL this plan was computed FOR (copied from the request, like `LocalReply`):
     /// by the time the reply lands the character has moved, and the debug record must describe the
     /// question the planner actually answered — not the question we would ask now (#608).
-    pub start:   [f32; 3],
-    pub goal:    [f32; 3],
+    pub start: [f32; 3],
+    pub goal: [f32; 3],
     pub outcome: PlanOutcome,
     /// How long the search actually took. This is the stall that used to land on the NET THREAD.
     pub plan_ms: u128,
@@ -98,8 +98,8 @@ pub struct PlanReply {
 
 /// The ActionLoop's handle on the worker: post requests, poll for the one reply that still matters.
 pub struct Planner {
-    req_tx:   Sender<PlanRequest>,
-    rep_rx:   Receiver<PlanReply>,
+    req_tx: Sender<PlanRequest>,
+    rep_rx: Receiver<PlanReply>,
     /// Next generation to hand out. Monotonic for the life of the ActionLoop.
     next_gen: u64,
     /// The generation we are currently waiting on, and the GOAL it was requested for.
@@ -111,14 +111,16 @@ pub struct Planner {
     /// said yes for the rest of the session: the planner stopped posting, and the character sat at
     /// `nav_state: planning` PERMANENTLY, with a live, idle worker. Keeping the pair here makes that
     /// state UNREPRESENTABLE — `poll` clears both, atomically, and no caller can leak one.
-    pending:  Option<(u64, [f32; 3])>,
+    pending: Option<(u64, [f32; 3])>,
     /// Latched once the worker thread has died (panicked). A dead planner must never masquerade as
     /// a busy one — see [`Planner::poll`].
-    dead:     bool,
+    dead: bool,
 }
 
 impl Default for Planner {
-    fn default() -> Self { Self::spawn() }
+    fn default() -> Self {
+        Self::spawn()
+    }
 }
 
 impl Planner {
@@ -130,7 +132,13 @@ impl Planner {
             .name("nav-planner".into())
             .spawn(move || worker(req_rx, rep_tx))
             .expect("spawn nav-planner thread");
-        Planner { req_tx, rep_rx, next_gen: 1, pending: None, dead: false }
+        Planner {
+            req_tx,
+            rep_rx,
+            next_gen: 1,
+            pending: None,
+            dead: false,
+        }
     }
 
     /// Test-only (#398): like `spawn`, but also hands back a channel the worker sends on every time
@@ -147,7 +155,16 @@ impl Planner {
             .name("nav-planner-test".into())
             .spawn(move || worker_with_dequeue_signal(req_rx, rep_tx, dq_tx))
             .expect("spawn nav-planner thread");
-        (Planner { req_tx, rep_rx, next_gen: 1, pending: None, dead: false }, dq_rx)
+        (
+            Planner {
+                req_tx,
+                rep_rx,
+                next_gen: 1,
+                pending: None,
+                dead: false,
+            },
+            dq_rx,
+        )
     }
 
     /// Post a plan request and return its generation. **Never blocks on the search** — this is the
@@ -162,8 +179,10 @@ impl Planner {
         // report it rather than leaving the walker waiting on a plan that will never come.
         if self.req_tx.send(req).is_err() {
             if !self.dead {
-                tracing::error!("nav-planner: the worker thread is gone — pathfinding is DEAD (no route will \
-                    ever be planned again this session)");
+                tracing::error!(
+                    "nav-planner: the worker thread is gone — pathfinding is DEAD (no route will \
+                    ever be planned again this session)"
+                );
             }
             self.dead = true;
             self.pending = None;
@@ -188,15 +207,21 @@ impl Planner {
     }
 
     /// Are we waiting on a plan right now?
-    pub fn is_planning(&self) -> bool { self.pending.is_some() }
+    pub fn is_planning(&self) -> bool {
+        self.pending.is_some()
+    }
 
     /// The GOAL of the plan currently in flight, if any. Cleared by `poll` the instant its reply is
     /// handed over — so it can never outlive the request it describes.
-    pub fn in_flight_goal(&self) -> Option<[f32; 3]> { self.pending.map(|(_, g)| g) }
+    pub fn in_flight_goal(&self) -> Option<[f32; 3]> {
+        self.pending.map(|(_, g)| g)
+    }
 
     /// Has the worker thread DIED (panicked)? Once true, no plan will ever be computed again, and
     /// the caller MUST say so out loud — see [`Planner::poll`].
-    pub fn is_dead(&self) -> bool { self.dead }
+    pub fn is_dead(&self) -> bool {
+        self.dead
+    }
 
     /// Drain the reply channel and return the plan for the request we are actually waiting on.
     /// **Stale replies (a superseded goal) are discarded, not applied** — see the module docs.
@@ -218,7 +243,9 @@ impl Planner {
         loop {
             match self.rep_rx.try_recv() {
                 Ok(rep) => {
-                    if let Some(rep) = self.accept_reply(rep) { fresh = Some(rep); }
+                    if let Some(rep) = self.accept_reply(rep) {
+                        fresh = Some(rep);
+                    }
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -247,7 +274,11 @@ impl Planner {
             self.pending = None;
             Some(rep)
         } else {
-            tracing::debug!("nav-planner: discarding STALE plan #{} (now waiting on {:?})", rep.gen, self.pending);
+            tracing::debug!(
+                "nav-planner: discarding STALE plan #{} (now waiting on {:?})",
+                rep.gen,
+                self.pending
+            );
             None
         }
     }
@@ -262,9 +293,13 @@ impl Planner {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            let rep = self.rep_rx.recv_timeout(remaining)
+            let rep = self
+                .rep_rx
+                .recv_timeout(remaining)
                 .expect("a reply must arrive within the timeout");
-            if let Some(rep) = self.accept_reply(rep) { return rep; }
+            if let Some(rep) = self.accept_reply(rep) {
+                return rep;
+            }
         }
     }
 }
@@ -280,24 +315,39 @@ fn worker(req_rx: Receiver<PlanRequest>, rep_tx: Sender<PlanReply>) {
 /// `on_dequeue`, right after coalescing and right before running the search — see
 /// [`Planner::spawn_with_dequeue_signal`].
 #[cfg(test)]
-fn worker_with_dequeue_signal(req_rx: Receiver<PlanRequest>, rep_tx: Sender<PlanReply>, on_dequeue: Sender<u64>) {
+fn worker_with_dequeue_signal(
+    req_rx: Receiver<PlanRequest>,
+    rep_tx: Sender<PlanReply>,
+    on_dequeue: Sender<u64>,
+) {
     worker_impl(req_rx, rep_tx, Some(on_dequeue))
 }
 
-fn worker_impl(req_rx: Receiver<PlanRequest>, rep_tx: Sender<PlanReply>, on_dequeue: Option<Sender<u64>>) {
+fn worker_impl(
+    req_rx: Receiver<PlanRequest>,
+    rep_tx: Sender<PlanReply>,
+    on_dequeue: Option<Sender<u64>>,
+) {
     while let Ok(mut req) = req_rx.recv() {
         while let Ok(newer) = req_rx.try_recv() {
-            tracing::debug!("nav-planner: superseding queued plan #{} with #{}", req.gen, newer.gen);
+            tracing::debug!(
+                "nav-planner: superseding queued plan #{} with #{}",
+                req.gen,
+                newer.gen
+            );
             req = newer;
         }
         // Test-only observer: the worker has now committed to `req.gen` — it is no longer sitting in
         // `req_rx` where a future request could coalesce it away. `None` in production; a dropped
         // receiver on the test side is not this thread's problem, hence `let _ =`.
-        if let Some(tx) = &on_dequeue { let _ = tx.send(req.gen); }
+        if let Some(tx) = &on_dequeue {
+            let _ = tx.send(req.gen);
+        }
         let t0 = Instant::now();
         // Is the planner about to change the goal it was given? (A zone-line goal is a VOLUME, not a
         // floor point — it is not "snapped" and must not be reported as such.)
-        let goal_snapped = req.goal_region
+        let goal_snapped = req
+            .goal_region
             .is_none()
             .then(|| req.collision.goal_z_was_snapped(req.goal))
             .flatten();
@@ -320,12 +370,21 @@ fn worker_impl(req_rx: Receiver<PlanRequest>, rep_tx: Sender<PlanReply>, on_dequ
         // recording cost sits HERE, on the worker thread — never on the net thread — and is bounded
         // by `TRACE_EDGE_CAP`.
         let trace = std::sync::Arc::new(std::sync::Mutex::new(
-            crate::diagnostics::SearchTrace::with_budget(crate::diagnostics::TRACE_EDGE_CAP)));
-        let ctx = PlanCtx::worker().ensure_budget()
+            crate::diagnostics::SearchTrace::with_budget(crate::diagnostics::TRACE_EDGE_CAP),
+        ));
+        let ctx = PlanCtx::worker()
+            .ensure_budget()
             .with_goal_region(req.goal_region)
             .with_teleport_pads(req.teleport_pads.clone())
             .with_trace(trace.clone());
-        let (outcome, tight) = plan_path_with_ctx(&req.collision, req.start, req.goal, &req.avoid, req.aggro_buffer, ctx);
+        let (outcome, tight) = plan_path_with_ctx(
+            &req.collision,
+            req.start,
+            req.goal,
+            &req.avoid,
+            req.aggro_buffer,
+            ctx,
+        );
         let trace = trace.lock().unwrap().clone();
         let plan_ms = t0.elapsed().as_millis();
         // The headline number for #340: this is the synchronous stall that used to sit on the net
@@ -335,8 +394,19 @@ fn worker_impl(req_rx: Receiver<PlanRequest>, rep_tx: Sender<PlanReply>, on_dequ
             req.gen, req.start[0], req.start[1], req.goal[0], req.goal[1], plan_ms,
             describe(&outcome), trace.edge_count(),
             if trace.truncated() { ", trace TRUNCATED — the recording boundary is NOT the search frontier" } else { "" });
-        if rep_tx.send(PlanReply { gen: req.gen, start: req.start, goal: req.goal, outcome, plan_ms,
-            goal_snapped, tight, trace }).is_err() {
+        if rep_tx
+            .send(PlanReply {
+                gen: req.gen,
+                start: req.start,
+                goal: req.goal,
+                outcome,
+                plan_ms,
+                goal_snapped,
+                tight,
+                trace,
+            })
+            .is_err()
+        {
             break; // ActionLoop gone (zone change / shutdown)
         }
     }
@@ -346,10 +416,21 @@ fn describe(o: &PlanOutcome) -> String {
     match o {
         PlanOutcome::Route(p) => format!("ROUTE ({} wp)", p.len()),
         PlanOutcome::Unreachable { reason, .. } => format!("UNREACHABLE ({})", reason.as_str()),
-        PlanOutcome::Exhausted { limit, progress: Some(p) } =>
-            format!("EXHAUSTED ({}) — walking a PARTIAL route ({} wp) and re-planning from its end", limit.as_str(), p.len()),
-        PlanOutcome::Exhausted { limit, progress: None } =>
-            format!("EXHAUSTED ({}) — no usable progress; this is 'I DON'T KNOW', not 'no route'", limit.as_str()),
+        PlanOutcome::Exhausted {
+            limit,
+            progress: Some(p),
+        } => format!(
+            "EXHAUSTED ({}) — walking a PARTIAL route ({} wp) and re-planning from its end",
+            limit.as_str(),
+            p.len()
+        ),
+        PlanOutcome::Exhausted {
+            limit,
+            progress: None,
+        } => format!(
+            "EXHAUSTED ({}) — no usable progress; this is 'I DON'T KNOW', not 'no route'",
+            limit.as_str()
+        ),
     }
 }
 
@@ -382,7 +463,9 @@ pub fn plan_path(
     // one plan's worth (~28 s worst case, measured). Nothing real-time waits on this thread, but a
     // plan that runs for minutes still blocks the NEXT goal (the worker coalesces only between plans),
     // so the plan-wide bound matters.
-    let ctx = PlanCtx::worker().ensure_budget().with_goal_region(goal_region)
+    let ctx = PlanCtx::worker()
+        .ensure_budget()
+        .with_goal_region(goal_region)
         .with_teleport_pads(teleport_pads.to_vec());
     plan_path_with_ctx(col, start, goal, avoid, aggro_buffer, ctx)
 }
@@ -406,8 +489,18 @@ pub fn plan_path_with_ctx(
     // consumer drawing "the answer" never paints a losing pass's rejections over the committed
     // route. The whole-invocation range is only a fallback for the (untraced-answer) edge case.
     let mark0 = ctx.trace_calls_len();
-    let (first, first_tier) = col.find_path_ex_tiered(start, goal, radius, avoid, 8.0, None, aggro_buffer, ctx.clone());
-    let primary_range = ctx.trace_last_answer()
+    let (first, first_tier) = col.find_path_ex_tiered(
+        start,
+        goal,
+        radius,
+        avoid,
+        8.0,
+        None,
+        aggro_buffer,
+        ctx.clone(),
+    );
+    let primary_range = ctx
+        .trace_last_answer()
         .map(|i| (i, i + 1))
         .unwrap_or((mark0, ctx.trace_calls_len()));
     match first {
@@ -417,7 +510,10 @@ pub fn plan_path_with_ctx(
             return (first, first_tier);
         }
         // A definitive no... unless the START is what's broken, which we can still fix.
-        PlanOutcome::Unreachable { reason: NoRoute::StartIsolated, .. } => {}
+        PlanOutcome::Unreachable {
+            reason: NoRoute::StartIsolated,
+            ..
+        } => {}
         PlanOutcome::Unreachable { .. } => {
             ctx.trace_stamp_outcome(primary_range);
             return (first, first_tier);
@@ -428,32 +524,55 @@ pub fn plan_path_with_ctx(
     // always a few units away laterally (usually just downhill). Retry from the nearest such floor;
     // the route then begins there and the walker heads off the face to it first.
     const RING: [(f32, f32); 12] = [
-        (-16.0, 0.0), (16.0, 0.0), (0.0, -16.0), (0.0, 16.0),
-        (-16.0, -16.0), (16.0, -16.0), (-16.0, 16.0), (16.0, 16.0),
-        (-32.0, 0.0), (32.0, 0.0), (0.0, -32.0), (0.0, 32.0),
+        (-16.0, 0.0),
+        (16.0, 0.0),
+        (0.0, -16.0),
+        (0.0, 16.0),
+        (-16.0, -16.0),
+        (16.0, -16.0),
+        (-16.0, 16.0),
+        (16.0, 16.0),
+        (-32.0, 0.0),
+        (32.0, 0.0),
+        (0.0, -32.0),
+        (0.0, 32.0),
     ];
     for (dx, dy) in RING {
         let (ax, ay) = (start[0] + dx, start[1] + dy);
         // A floor reachable from the char's height (a generous down-search finds ground below a face).
-        let Some(af) = col.nearest_floor(ax, ay, start[2], 20.0, 100.0) else { continue };
+        let Some(af) = col.nearest_floor(ax, ay, start[2], 20.0, 100.0) else {
+            continue;
+        };
         let anchor = [ax, ay, af];
         // Same shared budget (`ctx.clone()` shares the `Arc`): the ring retries draw down the SAME 8M,
         // so 13 calls cost one plan's budget, not 13. The last retry may find the budget already spent
         // by earlier ones and return `Exhausted(NodeCap)` — honest, and bounded.
         let ring_mark = ctx.trace_calls_len();
-        let (out, out_tier) = col.find_path_ex_tiered(anchor, goal, radius, avoid, 8.0, None, aggro_buffer, ctx.clone());
+        let (out, out_tier) = col.find_path_ex_tiered(
+            anchor,
+            goal,
+            radius,
+            avoid,
+            8.0,
+            None,
+            aggro_buffer,
+            ctx.clone(),
+        );
         // Only worthwhile if the re-anchored start could actually MOVE (more than the lone start
         // cell A* was stuck on). `> 2`, not `> 1`: every route begins AT its start point (find_path
         // prepends it), so a route that goes nowhere is already len 2.
         let usable = match &out {
             PlanOutcome::Route(p) => p.len() > 2,
-            PlanOutcome::Exhausted { progress: Some(p), .. } => p.len() > 2,
+            PlanOutcome::Exhausted {
+                progress: Some(p), ..
+            } => p.len() > 2,
             _ => false,
         };
         if usable {
             tracing::warn!("nav: start isolated at ({:.0},{:.0},{:.0}) — re-anchored to clean floor ({:.0},{:.0},{:.0})",
                 start[0], start[1], start[2], ax, ay, af);
-            let ring_range = ctx.trace_last_answer()
+            let ring_range = ctx
+                .trace_last_answer()
                 .map(|i| (i, i + 1))
                 .unwrap_or((ring_mark, ctx.trace_calls_len()));
             ctx.trace_stamp_outcome(ring_range);
@@ -471,12 +590,12 @@ pub fn plan_path_with_ctx(
 
 /// One fine/local steering plan: a bounded 2 u A* from the character to a carrot on the coarse route.
 pub struct LocalRequest {
-    pub gen:       u64,
-    pub start:     [f32; 3],
+    pub gen: u64,
+    pub start: [f32; 3],
     /// The carrot: a point ~`LOCAL_REACH` ahead on the committed coarse route.
-    pub goal:      [f32; 3],
-    pub cell:      f32,
-    pub bound:     f32,
+    pub goal: [f32; 3],
+    pub cell: f32,
+    pub bound: f32,
     /// How near the carrot counts as REACHING it — see `Collision::find_path_local`.
     pub carrot_tol: f32,
     pub collision: Arc<Collision>,
@@ -487,9 +606,9 @@ pub struct LocalRequest {
 /// ("did it reach its carrot?") must be made against the question it actually answered, not against
 /// the question we would ask now.
 pub struct LocalReply {
-    pub gen:     u64,
-    pub start:   [f32; 3],
-    pub goal:    [f32; 3],
+    pub gen: u64,
+    pub start: [f32; 3],
+    pub goal: [f32; 3],
     pub outcome: LocalOutcome,
     /// Microseconds, not milliseconds: this is the stall that used to land on the NET THREAD every
     /// single nav tick (measured, release, akanon: mean 15.3 ms, worst 358 ms).
@@ -519,16 +638,18 @@ pub struct LocalReply {
 /// luck*; so the no-stall claim is discharged by a property test over that pure function, not by a
 /// race we happened to win.
 pub struct LocalPlanner {
-    req_tx:   Sender<LocalRequest>,
-    rep_rx:   Receiver<LocalReply>,
+    req_tx: Sender<LocalRequest>,
+    rep_rx: Receiver<LocalReply>,
     next_gen: u64,
     /// The generation we are waiting on. Cleared by `poll` the instant its reply is handed over.
-    pending:  Option<u64>,
-    dead:     bool,
+    pending: Option<u64>,
+    dead: bool,
 }
 
 impl Default for LocalPlanner {
-    fn default() -> Self { Self::spawn() }
+    fn default() -> Self {
+        Self::spawn()
+    }
 }
 
 impl LocalPlanner {
@@ -539,7 +660,13 @@ impl LocalPlanner {
             .name("nav-local".into())
             .spawn(move || local_worker(req_rx, rep_tx))
             .expect("spawn nav-local thread");
-        LocalPlanner { req_tx, rep_rx, next_gen: 1, pending: None, dead: false }
+        LocalPlanner {
+            req_tx,
+            rep_rx,
+            next_gen: 1,
+            pending: None,
+            dead: false,
+        }
     }
 
     /// Post a fine plan **if the worker is idle**, and return whether one was posted. A channel send —
@@ -563,7 +690,9 @@ impl LocalPlanner {
     /// post while one is in flight is a no-op), and there is nothing to wait on because there is nothing
     /// to ask. Callers get an aim from `crate::steering::steer_target`, which is total.
     pub fn post_if_idle(&mut self, mut req: LocalRequest) -> bool {
-        if self.pending.is_some() || self.dead { return false; }
+        if self.pending.is_some() || self.dead {
+            return false;
+        }
         let gen = self.next_gen;
         self.next_gen += 1;
         req.gen = gen;
@@ -581,16 +710,22 @@ impl LocalPlanner {
     }
 
     /// Abandon the fine plan in flight (the route was reset / nav stopped).
-    pub fn cancel(&mut self) { self.pending = None; }
+    pub fn cancel(&mut self) {
+        self.pending = None;
+    }
 
     /// Test-only. Production code cannot ask this — see [`LocalPlanner::post_if_idle`].
     #[cfg(test)]
-    pub fn is_planning(&self) -> bool { self.pending.is_some() }
+    pub fn is_planning(&self) -> bool {
+        self.pending.is_some()
+    }
 
     /// Has the fine worker DIED? Unlike the coarse planner this is NOT terminal for navigation — the
     /// walker degrades to coarse-only steering — but it must still be said out loud, because an agent
     /// that is being steered without the fine tier is being steered worse and deserves to know.
-    pub fn is_dead(&self) -> bool { self.dead }
+    pub fn is_dead(&self) -> bool {
+        self.dead
+    }
 
     #[cfg(test)]
     pub fn kill_worker_for_test(&mut self) {
@@ -633,16 +768,37 @@ impl LocalPlanner {
 /// request (an older carrot is already stale — the walker has driven past it), plan, reply.
 fn local_worker(req_rx: Receiver<LocalRequest>, rep_tx: Sender<LocalReply>) {
     while let Ok(mut req) = req_rx.recv() {
-        while let Ok(newer) = req_rx.try_recv() { req = newer; }
+        while let Ok(newer) = req_rx.try_recv() {
+            req = newer;
+        }
         let t0 = Instant::now();
-        let outcome = req.collision.find_path_local(req.start, req.goal, req.cell, req.bound, req.carrot_tol);
+        let outcome =
+            req.collision
+                .find_path_local(req.start, req.goal, req.cell, req.bound, req.carrot_tol);
         let plan_us = t0.elapsed().as_micros();
         if !outcome.threaded() {
-            tracing::debug!("nav-local: fine plan #{} ({:.0},{:.0})->({:.0},{:.0}) = {} ({}) in {}us",
-                req.gen, req.start[0], req.start[1], req.goal[0], req.goal[1],
-                outcome.state(), outcome.reason(), plan_us);
+            tracing::debug!(
+                "nav-local: fine plan #{} ({:.0},{:.0})->({:.0},{:.0}) = {} ({}) in {}us",
+                req.gen,
+                req.start[0],
+                req.start[1],
+                req.goal[0],
+                req.goal[1],
+                outcome.state(),
+                outcome.reason(),
+                plan_us
+            );
         }
-        if rep_tx.send(LocalReply { gen: req.gen, start: req.start, goal: req.goal, outcome, plan_us }).is_err() {
+        if rep_tx
+            .send(LocalReply {
+                gen: req.gen,
+                start: req.start,
+                goal: req.goal,
+                outcome,
+                plan_us,
+            })
+            .is_err()
+        {
             break; // ActionLoop gone (zone change / shutdown)
         }
     }
@@ -651,16 +807,22 @@ fn local_worker(req_rx: Receiver<LocalRequest>, rep_tx: Sender<LocalReply>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eqoxide_assets::{MeshData, RenderMode, ZoneAssets};
     use crate::collision::{LocalOutcome, PlanOutcome};
+    use eqoxide_assets::{MeshData, RenderMode, ZoneAssets};
     use eqoxide_zone_geometry::collision::Collision;
 
     /// GLB-space quad (`positions` are `[north, up, east]`).
     fn quad(v: Vec<[f32; 3]>) -> MeshData {
         MeshData {
-            positions: v, normals: vec![], uvs: vec![], indices: vec![0, 1, 2, 0, 2, 3],
-            texture_name: None, base_color: [1.0; 4], center: [0.0; 3],
-            render_mode: RenderMode::Opaque, anim: None,
+            positions: v,
+            normals: vec![],
+            uvs: vec![],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            texture_name: None,
+            base_color: [1.0; 4],
+            center: [0.0; 3],
+            render_mode: RenderMode::Opaque,
+            anim: None,
         }
     }
 
@@ -675,14 +837,26 @@ mod tests {
         const H: f32 = 30.0; // wall height — well over the walker's step/chest rays
         let terrain = vec![
             // the floor
-            quad(vec![[-half, 0.0, -half], [half, 0.0, -half], [half, 0.0, half], [-half, 0.0, half]]),
+            quad(vec![
+                [-half, 0.0, -half],
+                [half, 0.0, -half],
+                [half, 0.0, half],
+                [-half, 0.0, half],
+            ]),
             // four walls, meeting at the corners → a sealed room
             quad(vec![[n0, 0.0, e0], [n1, 0.0, e0], [n1, H, e0], [n0, H, e0]]),
             quad(vec![[n0, 0.0, e1], [n1, 0.0, e1], [n1, H, e1], [n0, H, e1]]),
             quad(vec![[n0, 0.0, e0], [n0, 0.0, e1], [n0, H, e1], [n0, H, e0]]),
             quad(vec![[n1, 0.0, e0], [n1, 0.0, e1], [n1, H, e1], [n1, H, e0]]),
         ];
-        Collision::build(&ZoneAssets { terrain, objects: vec![], textures: vec![] }, 32.0)
+        Collision::build(
+            &ZoneAssets {
+                terrain,
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        )
     }
 
     /// The #337 invariant, at the planner level: a goal that is genuinely walled off must come back
@@ -701,12 +875,23 @@ mod tests {
     #[test]
     fn an_unreachable_goal_reports_unreachable_not_a_partial_route() {
         let col = plane_with_sealed_box(1000.0, 400.0, 400.0);
-        let (out, _tier) = plan_path(&col, [-900.0, -900.0, 0.0], [400.0, 400.0, 0.0], &[], 0.0, None, &[]);
+        let (out, _tier) = plan_path(
+            &col,
+            [-900.0, -900.0, 0.0],
+            [400.0, 400.0, 0.0],
+            &[],
+            0.0,
+            None,
+            &[],
+        );
         match &out {
             PlanOutcome::Unreachable { reason: NoRoute::SearchClosed, .. } => {}
             other => panic!("a walled-off goal must report a DEFINITIVE Unreachable(SearchClosed), got {other:?}"),
         }
-        assert!(out.route().is_none(), "an unreachable goal must yield NO waypoints — a partial route here is the #337 lie");
+        assert!(
+            out.route().is_none(),
+            "an unreachable goal must yield NO waypoints — a partial route here is the #337 lie"
+        );
     }
 
     /// # PROPERTY: **THE COARSE PLANNER'S ANSWER DOES NOT DEPEND ON MACHINE SPEED.** (#394)
@@ -726,17 +911,25 @@ mod tests {
     /// makes a genuinely-unreachable goal report anything other than the definitive no.)
     #[test]
     fn the_coarse_planner_is_deterministic_under_load() {
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
 
         let col = Arc::new(plane_with_sealed_box(1000.0, 400.0, 400.0));
         // Saturate the box: one busy-spinner per core, so the plan below competes for CPU exactly the
         // way it does on a loaded CI runner (which is where the wall-clock version failed).
         let stop = Arc::new(AtomicBool::new(false));
-        let load: Vec<_> = (0..std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4))
+        let load: Vec<_> = (0..std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4))
             .map(|_| {
                 let stop = stop.clone();
-                std::thread::spawn(move || { let mut x = 0u64; while !stop.load(Ordering::Relaxed) { x = x.wrapping_add(1); std::hint::black_box(x); } })
+                std::thread::spawn(move || {
+                    let mut x = 0u64;
+                    while !stop.load(Ordering::Relaxed) {
+                        x = x.wrapping_add(1);
+                        std::hint::black_box(x);
+                    }
+                })
             })
             .collect();
 
@@ -744,14 +937,24 @@ mod tests {
         // (4 iterations, not more: each is a full 62,500-cell frontier close — the point is proven by a
         // handful of repeats under load, and a property test must not itself become a CI time sink.)
         for i in 0..4 {
-            let (out, _tier) = plan_path(&col, [-900.0, -900.0, 0.0], [400.0, 400.0, 0.0], &[], 0.0, None, &[]);
+            let (out, _tier) = plan_path(
+                &col,
+                [-900.0, -900.0, 0.0],
+                [400.0, 400.0, 0.0],
+                &[],
+                0.0,
+                None,
+                &[],
+            );
             assert!(matches!(out, PlanOutcome::Unreachable { reason: NoRoute::SearchClosed, .. }),
                 "run {i} under full CPU load returned {out:?} — the coarse planner's answer must NOT \
                  depend on machine speed. A wall-clock budget would flip this to Exhausted(Deadline); a \
                  node cap cannot (#394).");
         }
         stop.store(true, Ordering::Relaxed);
-        for h in load { let _ = h.join(); }
+        for h in load {
+            let _ = h.join();
+        }
     }
 
     /// # THE NODE BUDGET IS PLAN-WIDE, NOT PER-CALL (#394 review, FIX 1).
@@ -773,17 +976,47 @@ mod tests {
     /// is exactly the condition under which per-call vs plan-wide budgeting differs by ~13×.
     fn two_boxes(half: f32, box_e: f32, box_n: f32, start_e: f32, start_n: f32) -> Collision {
         const H: f32 = 30.0;
-        let mut terrain = vec![
-            quad(vec![[-half, 0.0, -half], [half, 0.0, -half], [half, 0.0, half], [-half, 0.0, half]]),
-        ];
+        let mut terrain = vec![quad(vec![
+            [-half, 0.0, -half],
+            [half, 0.0, -half],
+            [half, 0.0, half],
+            [-half, 0.0, half],
+        ])];
         for (ce, cn, r) in [(box_e, box_n, 24.0f32), (start_e, start_n, 6.0f32)] {
             let (e0, e1, n0, n1) = (ce - r, ce + r, cn - r, cn + r);
-            terrain.push(quad(vec![[n0, 0.0, e0], [n1, 0.0, e0], [n1, H, e0], [n0, H, e0]]));
-            terrain.push(quad(vec![[n0, 0.0, e1], [n1, 0.0, e1], [n1, H, e1], [n0, H, e1]]));
-            terrain.push(quad(vec![[n0, 0.0, e0], [n0, 0.0, e1], [n0, H, e1], [n0, H, e0]]));
-            terrain.push(quad(vec![[n1, 0.0, e0], [n1, 0.0, e1], [n1, H, e1], [n1, H, e0]]));
+            terrain.push(quad(vec![
+                [n0, 0.0, e0],
+                [n1, 0.0, e0],
+                [n1, H, e0],
+                [n0, H, e0],
+            ]));
+            terrain.push(quad(vec![
+                [n0, 0.0, e1],
+                [n1, 0.0, e1],
+                [n1, H, e1],
+                [n0, H, e1],
+            ]));
+            terrain.push(quad(vec![
+                [n0, 0.0, e0],
+                [n0, 0.0, e1],
+                [n0, H, e1],
+                [n0, H, e0],
+            ]));
+            terrain.push(quad(vec![
+                [n1, 0.0, e0],
+                [n1, 0.0, e1],
+                [n1, H, e1],
+                [n1, H, e0],
+            ]));
         }
-        Collision::build(&ZoneAssets { terrain, objects: vec![], textures: vec![] }, 32.0)
+        Collision::build(
+            &ZoneAssets {
+                terrain,
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        )
     }
 
     #[test]
@@ -798,7 +1031,14 @@ mod tests {
         let counter = ctx.expanded.clone().unwrap();
 
         // Drive the REAL plan_path fan-out (primary + 12-point ring) against the shared budget.
-        let (out, _tier) = plan_path_with_ctx(&col, [-400.0, -400.0, 0.0], [400.0, 400.0, 0.0], &[], 0.0, ctx);
+        let (out, _tier) = plan_path_with_ctx(
+            &col,
+            [-400.0, -400.0, 0.0],
+            [400.0, 400.0, 0.0],
+            &[],
+            0.0,
+            ctx,
+        );
         let total = counter.load(Ordering::Relaxed);
 
         // LOWER bound: the plan really did its work THROUGH this shared counter. If a call quietly
@@ -827,13 +1067,29 @@ mod tests {
     /// clearance-reject branch turns assertion 1 RED.
     #[test]
     fn trace_records_planner_decisions_and_absence_means_unevaluated() {
-        use crate::diagnostics::{EdgeKind, EdgeVerdict, RejectReason, SearchTrace, TRACE_EDGE_CAP};
+        use crate::diagnostics::{
+            EdgeKind, EdgeVerdict, RejectReason, SearchTrace, TRACE_EDGE_CAP,
+        };
         // Small plane (2 500 coarse cells) so the full flood fits inside the trace budget.
         let col = plane_with_sealed_box(200.0, 100.0, 100.0);
-        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(TRACE_EDGE_CAP)));
-        let ctx = crate::collision::PlanCtx::worker().ensure_budget().with_trace(trace.clone());
-        let (out, _tier) = plan_path_with_ctx(&col, [-150.0, -150.0, 0.0], [100.0, 100.0, 0.0], &[], 0.0, ctx);
-        assert!(matches!(out, PlanOutcome::Unreachable { .. }), "the boxed goal stays unreachable: {out:?}");
+        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(
+            TRACE_EDGE_CAP,
+        )));
+        let ctx = crate::collision::PlanCtx::worker()
+            .ensure_budget()
+            .with_trace(trace.clone());
+        let (out, _tier) = plan_path_with_ctx(
+            &col,
+            [-150.0, -150.0, 0.0],
+            [100.0, 100.0, 0.0],
+            &[],
+            0.0,
+            ctx,
+        );
+        assert!(
+            matches!(out, PlanOutcome::Unreachable { .. }),
+            "the boxed goal stays unreachable: {out:?}"
+        );
 
         let t = trace.lock().unwrap();
         assert!(!t.calls.is_empty(), "the traced plan must record its calls");
@@ -845,12 +1101,28 @@ mod tests {
             let (dx, dy) = ((p[0] - 100.0).abs(), (p[1] - 100.0).abs());
             dx <= 32.0 && dy <= 32.0 && (dx >= 16.0 || dy >= 16.0)
         };
-        let wall_rejects = edges.iter().filter(|e|
-            matches!(e.verdict, EdgeVerdict::Rejected { reason: RejectReason::Clearance })
-                && near_wall(e.to)).count();
-        assert!(wall_rejects > 0, "the sealing walls must appear as recorded Clearance rejections");
+        let wall_rejects = edges
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.verdict,
+                    EdgeVerdict::Rejected {
+                        reason: RejectReason::Clearance
+                    }
+                ) && near_wall(e.to)
+            })
+            .count();
+        assert!(
+            wall_rejects > 0,
+            "the sealing walls must appear as recorded Clearance rejections"
+        );
         // 1b. Accepted walk edges on the open floor.
-        assert!(edges.iter().any(|e| matches!(e.verdict, EdgeVerdict::Accepted { kind: EdgeKind::Walk })));
+        assert!(edges.iter().any(|e| matches!(
+            e.verdict,
+            EdgeVerdict::Accepted {
+                kind: EdgeKind::Walk
+            }
+        )));
 
         // 2. UNEVALUATED STAYS ABSENT: nothing may originate inside the sealed interior.
         let interior = |p: [f32; 3]| (p[0] - 100.0).abs() < 16.0 && (p[1] - 100.0).abs() < 16.0;
@@ -859,12 +1131,24 @@ mod tests {
              the trace must not invent coverage");
 
         // 3. The rim of the world reads as NoFloor, not as silence.
-        assert!(edges.iter().any(|e| matches!(e.verdict, EdgeVerdict::Rejected { reason: RejectReason::NoFloor })),
-            "cells beyond the plane's rim must be recorded as no_floor evaluations");
+        assert!(
+            edges.iter().any(|e| matches!(
+                e.verdict,
+                EdgeVerdict::Rejected {
+                    reason: RejectReason::NoFloor
+                }
+            )),
+            "cells beyond the plane's rim must be recorded as no_floor evaluations"
+        );
 
         // The outcome range covers the calls that produced the returned verdict.
         let (o0, o1) = t.outcome_calls;
-        assert!(o0 < o1 && o1 <= t.calls.len(), "outcome_calls {:?} of {}", t.outcome_calls, t.calls.len());
+        assert!(
+            o0 < o1 && o1 <= t.calls.len(),
+            "outcome_calls {:?} of {}",
+            t.outcome_calls,
+            t.calls.len()
+        );
     }
 
     /// A climb too steep to walk is recorded as `Rejected {{ Grade }}` — the same branch that
@@ -874,20 +1158,58 @@ mod tests {
         use crate::diagnostics::{EdgeVerdict, RejectReason, SearchTrace, TRACE_EDGE_CAP};
         // Low floor (east < 0), a 2.5-grade ramp east 0..8 rising 0→20, high plateau east 8..100.
         let terrain = vec![
-            quad(vec![[-40.0, 0.0, -100.0], [40.0, 0.0, -100.0], [40.0, 0.0, 0.0], [-40.0, 0.0, 0.0]]),
-            quad(vec![[-40.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 20.0, 8.0], [-40.0, 20.0, 8.0]]),
-            quad(vec![[-40.0, 20.0, 8.0], [40.0, 20.0, 8.0], [40.0, 20.0, 100.0], [-40.0, 20.0, 100.0]]),
+            quad(vec![
+                [-40.0, 0.0, -100.0],
+                [40.0, 0.0, -100.0],
+                [40.0, 0.0, 0.0],
+                [-40.0, 0.0, 0.0],
+            ]),
+            quad(vec![
+                [-40.0, 0.0, 0.0],
+                [40.0, 0.0, 0.0],
+                [40.0, 20.0, 8.0],
+                [-40.0, 20.0, 8.0],
+            ]),
+            quad(vec![
+                [-40.0, 20.0, 8.0],
+                [40.0, 20.0, 8.0],
+                [40.0, 20.0, 100.0],
+                [-40.0, 20.0, 100.0],
+            ]),
         ];
-        let col = Collision::build(&ZoneAssets { terrain, objects: vec![], textures: vec![] }, 32.0);
-        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(TRACE_EDGE_CAP)));
-        let ctx = crate::collision::PlanCtx::worker().ensure_budget().with_trace(trace.clone());
+        let col = Collision::build(
+            &ZoneAssets {
+                terrain,
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        );
+        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(
+            TRACE_EDGE_CAP,
+        )));
+        let ctx = crate::collision::PlanCtx::worker()
+            .ensure_budget()
+            .with_trace(trace.clone());
         let _ = plan_path_with_ctx(&col, [-50.0, 0.0, 0.0], [50.0, 0.0, 20.0], &[], 0.0, ctx);
         let t = trace.lock().unwrap();
-        let grade_rejects = t.calls.iter().flat_map(|c| &c.edges)
-            .filter(|e| matches!(e.verdict, EdgeVerdict::Rejected { reason: RejectReason::Grade }))
+        let grade_rejects = t
+            .calls
+            .iter()
+            .flat_map(|c| &c.edges)
+            .filter(|e| {
+                matches!(
+                    e.verdict,
+                    EdgeVerdict::Rejected {
+                        reason: RejectReason::Grade
+                    }
+                )
+            })
             .count();
-        assert!(grade_rejects > 0,
-            "a 2.5-grade face must appear in the trace as grade rejections (found none)");
+        assert!(
+            grade_rejects > 0,
+            "a 2.5-grade face must appear in the trace as grade rejections (found none)"
+        );
     }
 
     /// **#615 review F4: `outcome_calls` is THE DECIDING CALL, not every call of the winning
@@ -907,33 +1229,84 @@ mod tests {
         // (margin 0, the character fits) threads it and IS the answer: the `search_tiered`
         // two-pass tight shape at the coarse tier.
         let terrain = vec![
-            quad(vec![[-40.0, 0.0, -60.0], [40.0, 0.0, -60.0], [40.0, 0.0, -12.0], [-40.0, 0.0, -12.0]]),
-            quad(vec![[-40.0, 0.0, 12.0], [40.0, 0.0, 12.0], [40.0, 0.0, 60.0], [-40.0, 0.0, 60.0]]),
-            quad(vec![[2.5, 0.0, -12.0], [5.5, 0.0, -12.0], [5.5, 0.0, 12.0], [2.5, 0.0, 12.0]]),
+            quad(vec![
+                [-40.0, 0.0, -60.0],
+                [40.0, 0.0, -60.0],
+                [40.0, 0.0, -12.0],
+                [-40.0, 0.0, -12.0],
+            ]),
+            quad(vec![
+                [-40.0, 0.0, 12.0],
+                [40.0, 0.0, 12.0],
+                [40.0, 0.0, 60.0],
+                [-40.0, 0.0, 60.0],
+            ]),
+            quad(vec![
+                [2.5, 0.0, -12.0],
+                [5.5, 0.0, -12.0],
+                [5.5, 0.0, 12.0],
+                [2.5, 0.0, 12.0],
+            ]),
         ];
-        let col = Collision::build(&ZoneAssets { terrain, objects: vec![], textures: vec![] }, 32.0);
-        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(TRACE_EDGE_CAP)));
-        let ctx = crate::collision::PlanCtx::worker().ensure_budget().with_trace(trace.clone());
-        let (out, tight) = plan_path_with_ctx(&col, [-50.0, 4.0, 0.0], [50.0, 4.0, 0.0], &[], 0.0, ctx);
-        assert!(matches!(out, PlanOutcome::Route(_)), "the slot must route: {out:?}");
-        assert!(tight, "fixture: the route must only exist at the minimum tier");
+        let col = Collision::build(
+            &ZoneAssets {
+                terrain,
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        );
+        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(
+            TRACE_EDGE_CAP,
+        )));
+        let ctx = crate::collision::PlanCtx::worker()
+            .ensure_budget()
+            .with_trace(trace.clone());
+        let (out, tight) =
+            plan_path_with_ctx(&col, [-50.0, 4.0, 0.0], [50.0, 4.0, 0.0], &[], 0.0, ctx);
+        assert!(
+            matches!(out, PlanOutcome::Route(_)),
+            "the slot must route: {out:?}"
+        );
+        assert!(
+            tight,
+            "fixture: the route must only exist at the minimum tier"
+        );
 
         let t = trace.lock().unwrap();
         let (o0, o1) = t.outcome_calls;
-        assert_eq!(o1 - o0, 1, "the outcome range is ONE call — the deciding one: {:?}", t.outcome_calls);
+        assert_eq!(
+            o1 - o0,
+            1,
+            "the outcome range is ONE call — the deciding one: {:?}",
+            t.outcome_calls
+        );
         let deciding = &t.calls[o0];
-        assert!(deciding.clearance <= eqoxide_core::physics::PLAYER_RADIUS + 0.01,
+        assert!(
+            deciding.clearance <= eqoxide_core::physics::PLAYER_RADIUS + 0.01,
             "the deciding call on a tight route is the MINIMUM-tier pass (clearance {}), \
-             not the generous pass that lost", deciding.clearance);
+             not the generous pass that lost",
+            deciding.clearance
+        );
         // The losing generous pass is present in the record (the agent can still see it)…
-        assert!(t.calls.iter().enumerate()
-            .any(|(i, c)| (i < o0 || i >= o1) && c.clearance > deciding.clearance),
-            "the generous pass must still be recorded, OUTSIDE the outcome range");
+        assert!(
+            t.calls
+                .iter()
+                .enumerate()
+                .any(|(i, c)| (i < o0 || i >= o1) && c.clearance > deciding.clearance),
+            "the generous pass must still be recorded, OUTSIDE the outcome range"
+        );
         // …and the deciding call itself contains the accepted corridor.
         use crate::diagnostics::{EdgeKind, EdgeVerdict};
-        assert!(deciding.edges.iter().any(|e|
-            matches!(e.verdict, EdgeVerdict::Accepted { kind: EdgeKind::Walk })),
-            "the deciding call carries the accepted route edges");
+        assert!(
+            deciding.edges.iter().any(|e| matches!(
+                e.verdict,
+                EdgeVerdict::Accepted {
+                    kind: EdgeKind::Walk
+                }
+            )),
+            "the deciding call carries the accepted route edges"
+        );
     }
 
     /// **#615 review F5: `RejectReason::Water` is LIVE, not advertised-only.** A water-family
@@ -945,17 +1318,43 @@ mod tests {
     #[test]
     fn trace_records_water_rejections_when_water_refuses_an_edge() {
         use crate::diagnostics::{EdgeVerdict, RejectReason, SearchTrace, TRACE_EDGE_CAP};
-        let terrain = vec![
-            quad(vec![[-60.0, 0.0, -60.0], [60.0, 0.0, -60.0], [60.0, 0.0, 60.0], [-60.0, 0.0, 60.0]]),
-        ];
-        let mut col = Collision::build(&ZoneAssets { terrain, objects: vec![], textures: vec![] }, 32.0);
-        col.set_water(Some(Arc::new(eqoxide_core::region_map::RegionMap::flat_below(30.0))));
-        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(TRACE_EDGE_CAP)));
-        let ctx = crate::collision::PlanCtx::worker().ensure_budget().with_trace(trace.clone());
+        let terrain = vec![quad(vec![
+            [-60.0, 0.0, -60.0],
+            [60.0, 0.0, -60.0],
+            [60.0, 0.0, 60.0],
+            [-60.0, 0.0, 60.0],
+        ])];
+        let mut col = Collision::build(
+            &ZoneAssets {
+                terrain,
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        );
+        col.set_water(Some(Arc::new(
+            eqoxide_core::region_map::RegionMap::flat_below(30.0),
+        )));
+        let trace = Arc::new(std::sync::Mutex::new(SearchTrace::with_budget(
+            TRACE_EDGE_CAP,
+        )));
+        let ctx = crate::collision::PlanCtx::worker()
+            .ensure_budget()
+            .with_trace(trace.clone());
         let _ = plan_path_with_ctx(&col, [-40.0, 0.0, 0.0], [40.0, 0.0, 0.0], &[], 0.0, ctx);
         let t = trace.lock().unwrap();
-        let water_rejects = t.calls.iter().flat_map(|c| &c.edges)
-            .filter(|e| matches!(e.verdict, EdgeVerdict::Rejected { reason: RejectReason::Water }))
+        let water_rejects = t
+            .calls
+            .iter()
+            .flat_map(|c| &c.edges)
+            .filter(|e| {
+                matches!(
+                    e.verdict,
+                    EdgeVerdict::Rejected {
+                        reason: RejectReason::Water
+                    }
+                )
+            })
             .count();
         assert!(water_rejects > 0,
             "a water refusal must be RECORDED — silent, it reads as unevaluated, which is the F5 lie");
@@ -967,8 +1366,19 @@ mod tests {
         let col = plane_with_sealed_box(200.0, 100.0, 100.0);
         let ctx = crate::collision::PlanCtx::worker().ensure_budget();
         assert_eq!(ctx.trace_calls_len(), 0);
-        let _ = plan_path_with_ctx(&col, [-150.0, -150.0, 0.0], [150.0, 150.0, 0.0], &[], 0.0, ctx.clone());
-        assert_eq!(ctx.trace_calls_len(), 0, "no trace armed → nothing recorded");
+        let _ = plan_path_with_ctx(
+            &col,
+            [-150.0, -150.0, 0.0],
+            [150.0, 150.0, 0.0],
+            &[],
+            0.0,
+            ctx.clone(),
+        );
+        assert_eq!(
+            ctx.trace_calls_len(),
+            0,
+            "no trace armed → nothing recorded"
+        );
     }
 
     /// A reachable goal on the same fixture still routes (the honesty change must not make the
@@ -976,11 +1386,23 @@ mod tests {
     #[test]
     fn a_reachable_goal_still_routes() {
         let col = plane_with_sealed_box(1000.0, 400.0, 400.0);
-        let (out, _tier) = plan_path(&col, [-900.0, -900.0, 0.0], [900.0, 900.0, 0.0], &[], 0.0, None, &[]);
-        let route = out.route().unwrap_or_else(|| panic!("an open-plane goal must route, got {out:?}"));
+        let (out, _tier) = plan_path(
+            &col,
+            [-900.0, -900.0, 0.0],
+            [900.0, 900.0, 0.0],
+            &[],
+            0.0,
+            None,
+            &[],
+        );
+        let route = out
+            .route()
+            .unwrap_or_else(|| panic!("an open-plane goal must route, got {out:?}"));
         let last = *route.last().unwrap();
-        assert!((last[0] - 900.0).abs() < 8.0 && (last[1] - 900.0).abs() < 8.0,
-            "the route must REACH the goal (not stop short), got {last:?}");
+        assert!(
+            (last[0] - 900.0).abs() < 8.0 && (last[1] - 900.0).abs() < 8.0,
+            "the route must REACH the goal (not stop short), got {last:?}"
+        );
     }
 
     /// The core stale-plan invariant (#340): if the goal changes while a plan is IN FLIGHT, that
@@ -1014,8 +1436,14 @@ mod tests {
         let col = Arc::new(plane_with_sealed_box(1000.0, 400.0, 400.0));
         let (mut planner, dequeued) = Planner::spawn_with_dequeue_signal();
         let mk = |goal: [f32; 3], col: &Arc<Collision>| PlanRequest {
-            gen: 0, start: [-900.0, -900.0, 0.0], goal,
-            avoid: vec![], aggro_buffer: 0.0, goal_region: None, teleport_pads: vec![], collision: col.clone(),
+            gen: 0,
+            start: [-900.0, -900.0, 0.0],
+            goal,
+            avoid: vec![],
+            aggro_buffer: 0.0,
+            goal_region: None,
+            teleport_pads: vec![],
+            collision: col.clone(),
         };
         // Plan A: the sealed goal — a full-grid search, hundreds of ms (longer still under load).
         let gen_a = planner.request(mk([400.0, 400.0, 0.0], &col));
@@ -1024,14 +1452,23 @@ mod tests {
         // can coalesce it away" — the real sync seam (#398), not a sleep. The worker's coalescing
         // loop only ever discards requests still SITTING in the channel; the instant it signals here,
         // A has left that channel for good and WILL run to completion, on any CPU, at any load.
-        let dequeued_gen = dequeued.recv_timeout(std::time::Duration::from_secs(60))
-            .expect("the worker must dequeue plan A — a timeout here is a liveness bug, not a race");
-        assert_eq!(dequeued_gen, gen_a, "the worker must have committed to A specifically");
+        let dequeued_gen = dequeued
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect(
+                "the worker must dequeue plan A — a timeout here is a liveness bug, not a race",
+            );
+        assert_eq!(
+            dequeued_gen, gen_a,
+            "the worker must have committed to A specifically"
+        );
 
         // The goal changes mid-flight. A's answer is now stale, but — deterministically, per above —
         // it is still being computed and WILL arrive.
         let gen_b = planner.request(mk([-900.0, 900.0, 0.0], &col));
-        assert!(gen_b > gen_a, "each request gets a fresh, increasing generation");
+        assert!(
+            gen_b > gen_a,
+            "each request gets a fresh, increasing generation"
+        );
 
         // The first (and only) plan we may apply must be B's. `recv_applied` blocks on the reply
         // channel and discards anything stale through the SAME rule `poll()` uses in production
@@ -1041,9 +1478,15 @@ mod tests {
         assert_eq!(rep.gen, gen_b,
             "the applied plan must be the CURRENT goal's (#{gen_b}) — the superseded #{gen_a}, which \
              WAS computed and DID arrive, must have been discarded on the way in");
-        assert!(!planner.is_planning(), "the reply we applied clears the pending request");
+        assert!(
+            !planner.is_planning(),
+            "the reply we applied clears the pending request"
+        );
         // And nothing is left queued to be applied later.
-        assert!(planner.poll().is_none(), "a stale reply must be DISCARDED, never queued for later");
+        assert!(
+            planner.poll().is_none(),
+            "a stale reply must be DISCARDED, never queued for later"
+        );
     }
 
     /// **A DEAD PLANNER MUST BE LOUD.** If the worker thread panics, `poll` used to see
@@ -1061,20 +1504,32 @@ mod tests {
         planner.kill_worker_for_test();
 
         planner.request(PlanRequest {
-            gen: 0, start: [-300.0, -300.0, 0.0], goal: [300.0, 300.0, 0.0],
-            avoid: vec![], aggro_buffer: 0.0, goal_region: None, teleport_pads: vec![], collision: col,
+            gen: 0,
+            start: [-300.0, -300.0, 0.0],
+            goal: [300.0, 300.0, 0.0],
+            avoid: vec![],
+            aggro_buffer: 0.0,
+            goal_region: None,
+            teleport_pads: vec![],
+            collision: col,
         });
         // Poll as the nav tick would. It must NOT sit there pretending a plan is coming.
         for _ in 0..50 {
-            if planner.poll().is_some() { panic!("a dead planner cannot produce a plan"); }
-            if planner.is_dead() { break; }
+            if planner.poll().is_some() {
+                panic!("a dead planner cannot produce a plan");
+            }
+            if planner.is_dead() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(planner.is_dead(),
             "a dead worker MUST be detected — otherwise nav reports `planning` forever, which is a \
              silent lie and strictly worse than the crash it replaced");
-        assert!(!planner.is_planning(),
-            "and it must not still claim a plan is in flight: nothing will ever answer it");
+        assert!(
+            !planner.is_planning(),
+            "and it must not still claim a plan is in flight: nothing will ever answer it"
+        );
     }
 
     /// **THE LIVENESS INVARIANT, made structural.** Handing a reply over MUST clear the in-flight
@@ -1091,21 +1546,37 @@ mod tests {
         let mut planner = Planner::spawn();
         let goal = [300.0, 300.0, 0.0];
         planner.request(PlanRequest {
-            gen: 0, start: [-300.0, -300.0, 0.0], goal,
-            avoid: vec![], aggro_buffer: 0.0, goal_region: None, teleport_pads: vec![], collision: col,
+            gen: 0,
+            start: [-300.0, -300.0, 0.0],
+            goal,
+            avoid: vec![],
+            aggro_buffer: 0.0,
+            goal_region: None,
+            teleport_pads: vec![],
+            collision: col,
         });
-        assert_eq!(planner.in_flight_goal(), Some(goal), "the posted goal is in flight");
+        assert_eq!(
+            planner.in_flight_goal(),
+            Some(goal),
+            "the posted goal is in flight"
+        );
 
         let mut got = None;
         for _ in 0..2000 {
-            if let Some(r) = planner.poll() { got = Some(r); break; }
+            if let Some(r) = planner.poll() {
+                got = Some(r);
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(got.is_some(), "the plan must come back");
-        assert_eq!(planner.in_flight_goal(), None,
+        assert_eq!(
+            planner.in_flight_goal(),
+            None,
             "handing the reply over MUST clear the in-flight goal — if it survives, the planner \
              believes a plan is forever in flight, stops posting, and the character is frozen at \
-             `nav_state: planning` for the rest of the session");
+             `nav_state: planning` for the rest of the session"
+        );
         assert!(!planner.is_planning(), "and nothing is pending");
     }
 
@@ -1115,12 +1586,21 @@ mod tests {
         let col = Arc::new(plane_with_sealed_box(400.0, 200.0, 200.0));
         let mut planner = Planner::spawn();
         planner.request(PlanRequest {
-            gen: 0, start: [-300.0, -300.0, 0.0], goal: [300.0, 300.0, 0.0],
-            avoid: vec![], aggro_buffer: 0.0, goal_region: None, teleport_pads: vec![], collision: col,
+            gen: 0,
+            start: [-300.0, -300.0, 0.0],
+            goal: [300.0, 300.0, 0.0],
+            avoid: vec![],
+            aggro_buffer: 0.0,
+            goal_region: None,
+            teleport_pads: vec![],
+            collision: col,
         });
         planner.cancel();
         for _ in 0..60 {
-            assert!(planner.poll().is_none(), "a cancelled plan's reply must never be applied");
+            assert!(
+                planner.poll().is_none(),
+                "a cancelled plan's reply must never be applied"
+            );
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(!planner.is_planning());
@@ -1153,20 +1633,29 @@ mod tests {
     fn posting_a_plan_does_not_block_the_caller() {
         let col = Arc::new(plane_with_sealed_box(1000.0, 400.0, 400.0));
         let start = [-900.0, -900.0, 0.0];
-        let goal  = [ 400.0,  400.0, 0.0]; // sealed in → the search must close the whole plane
+        let goal = [400.0, 400.0, 0.0]; // sealed in → the search must close the whole plane
 
         // What the NET THREAD used to pay, synchronously, for this plan:
         let t0 = Instant::now();
         let (outcome, _tier) = plan_path(&col, start, goal, &[], 0.0, None, &[]);
         let sync_us = t0.elapsed().as_micros();
-        assert!(matches!(outcome, PlanOutcome::Unreachable { .. }), "fixture sanity: this goal is sealed off");
+        assert!(
+            matches!(outcome, PlanOutcome::Unreachable { .. }),
+            "fixture sanity: this goal is sealed off"
+        );
 
         // What it pays now:
         let mut planner = Planner::spawn();
         let t1 = Instant::now();
         planner.request(PlanRequest {
-            gen: 0, start, goal, avoid: vec![], aggro_buffer: 0.0, goal_region: None,
-            teleport_pads: vec![], collision: col.clone(),
+            gen: 0,
+            start,
+            goal,
+            avoid: vec![],
+            aggro_buffer: 0.0,
+            goal_region: None,
+            teleport_pads: vec![],
+            collision: col.clone(),
         });
         let post_us = t1.elapsed().as_micros();
 
@@ -1178,9 +1667,11 @@ mod tests {
         // catches a proportional CPU-bound regression. Locally the ratio is ~900,000x-1,800,000x,
         // so 50x leaves generous headroom (sync_us / 50 ≈ 107ms allowed against the smallest
         // sync_us observed here) while still failing loudly if posting ever becomes a search.
-        assert!(post_us < 5_000 || post_us * 50 < sync_us,
+        assert!(
+            post_us < 5_000 || post_us * 50 < sync_us,
             "posting a plan must NOT block the net thread — it must be a channel send, not a \
-             search (posted {post_us}us vs synchronous {sync_us}us)");
+             search (posted {post_us}us vs synchronous {sync_us}us)"
+        );
     }
 
     // ------------------------------------------------------------------------------------------
@@ -1193,11 +1684,28 @@ mod tests {
     fn plane_with_a_solid_wall() -> Arc<Collision> {
         const H: f32 = 30.0;
         let terrain = vec![
-            quad(vec![[-100.0, 0.0, -100.0], [100.0, 0.0, -100.0], [100.0, 0.0, 100.0], [-100.0, 0.0, 100.0]]),
+            quad(vec![
+                [-100.0, 0.0, -100.0],
+                [100.0, 0.0, -100.0],
+                [100.0, 0.0, 100.0],
+                [-100.0, 0.0, 100.0],
+            ]),
             // A wall plane at east = 0, spanning the whole north extent. (GLB positions = [n, up, e].)
-            quad(vec![[-100.0, 0.0, 0.0], [100.0, 0.0, 0.0], [100.0, H, 0.0], [-100.0, H, 0.0]]),
+            quad(vec![
+                [-100.0, 0.0, 0.0],
+                [100.0, 0.0, 0.0],
+                [100.0, H, 0.0],
+                [-100.0, H, 0.0],
+            ]),
         ];
-        Arc::new(Collision::build(&ZoneAssets { terrain, objects: vec![], textures: vec![] }, 32.0))
+        Arc::new(Collision::build(
+            &ZoneAssets {
+                terrain,
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        ))
     }
 
     /// **THE #382 HEADLINE, MEASURED: the fine plan is no longer a search on the calling thread.**
@@ -1220,19 +1728,28 @@ mod tests {
     fn posting_a_fine_plan_does_not_block_the_caller() {
         let col = plane_with_a_solid_wall();
         let start = [-20.0, 0.0, 0.0];
-        let goal  = [ 20.0, 0.0, 0.0]; // through the wall: the window must be fully closed
+        let goal = [20.0, 0.0, 0.0]; // through the wall: the window must be fully closed
 
         // What the NET THREAD used to pay, synchronously, every single nav tick:
         let t0 = Instant::now();
         let outcome = col.find_path_local(start, goal, 2.0, 40.0, 4.0);
         let sync_us = t0.elapsed().as_micros();
-        assert!(!outcome.threaded(), "fixture sanity: the carrot is behind a solid wall");
+        assert!(
+            !outcome.threaded(),
+            "fixture sanity: the carrot is behind a solid wall"
+        );
 
         // What it pays now:
         let mut lp = LocalPlanner::spawn(); // #787-NOT-PRODUCTION
         let t1 = Instant::now();
         lp.post_if_idle(LocalRequest {
-            gen: 0, start, goal, cell: 2.0, bound: 40.0, carrot_tol: 4.0, collision: col.clone(),
+            gen: 0,
+            start,
+            goal,
+            cell: 2.0,
+            bound: 40.0,
+            carrot_tol: 4.0,
+            collision: col.clone(),
         });
         let post_us = t1.elapsed().as_micros();
 
@@ -1262,18 +1779,28 @@ mod tests {
         let blocked = col.find_path_local([-20.0, 0.0, 0.0], [20.0, 0.0, 0.0], 2.0, 40.0, 4.0);
         match &blocked {
             LocalOutcome::NoWayThrough { why, .. } => {
-                assert!(matches!(why, NoRoute::SearchClosed | NoRoute::StartIsolated),
-                    "a walled carrot closes the window: got {why:?}");
+                assert!(
+                    matches!(why, NoRoute::SearchClosed | NoRoute::StartIsolated),
+                    "a walled carrot closes the window: got {why:?}"
+                );
             }
-            other => panic!("a carrot behind a solid wall must CLOSE the window (NoWayThrough), got {other:?}"),
+            other => panic!(
+                "a carrot behind a solid wall must CLOSE the window (NoWayThrough), got {other:?}"
+            ),
         }
         // It is a LOCAL no, and it must never be able to become the agent-facing `no_path`.
         assert_ne!(blocked.state(), "no_path");
 
         // The mirror image: the honesty change must not make the fine tier timid.
         let open = col.find_path_local([-30.0, 0.0, 0.0], [-10.0, 0.0, 0.0], 2.0, 40.0, 4.0);
-        assert!(open.threaded(), "an open 20u run along the floor must THREAD, got {open:?}");
-        assert!(open.steer().len() >= 2, "and it must carry waypoints to steer along");
+        assert!(
+            open.threaded(),
+            "an open 20u run along the floor must THREAD, got {open:?}"
+        );
+        assert!(
+            open.steer().len() >= 2,
+            "and it must carry waypoints to steer along"
+        );
     }
 
     /// **THE FINE TIER IS DETERMINISTIC.** With the 150 ms wall clock deleted, the same question from
@@ -1290,7 +1817,9 @@ mod tests {
         for i in 0..12 {
             // Load the box between runs. A wall-clock-bounded search would notice; this one cannot.
             let mut sink = 0u64;
-            for k in 0..2_000_000u64 { sink = sink.wrapping_add(k ^ sink.rotate_left(7)); }
+            for k in 0..2_000_000u64 {
+                sink = sink.wrapping_add(k ^ sink.rotate_left(7));
+            }
             std::hint::black_box(sink);
             let again = col.find_path_local([-20.0, 0.0, 0.0], [20.0, 0.0, 0.0], 2.0, 40.0, 4.0);
             assert_eq!(first, again,
@@ -1314,30 +1843,51 @@ mod tests {
         let col = plane_with_a_solid_wall();
         let mut lp = LocalPlanner::spawn(); // #787-NOT-PRODUCTION
         let mk = |start: [f32; 3], goal: [f32; 3], col: &Arc<Collision>| LocalRequest {
-            gen: 0, start, goal, cell: 2.0, bound: 40.0, carrot_tol: 4.0, collision: col.clone(),
+            gen: 0,
+            start,
+            goal,
+            cell: 2.0,
+            bound: 40.0,
+            carrot_tol: 4.0,
+            collision: col.clone(),
         };
         // Plan A: the expensive walled question, so it really is in flight when we abandon it...
-        assert!(lp.post_if_idle(mk([-20.0, 0.0, 0.0], [20.0, 0.0, 0.0], &col)), "A must post");
+        assert!(
+            lp.post_if_idle(mk([-20.0, 0.0, 0.0], [20.0, 0.0, 0.0], &col)),
+            "A must post"
+        );
         assert!(!lp.post_if_idle(mk([0.0, 0.0, 0.0], [10.0, 0.0, 0.0], &col)),
             "a second post while one is in flight must be a NO-OP — the walker never queues fine plans");
         // ...the route is reset (a new /goto, a teleport): the plan is abandoned mid-flight.
         lp.cancel();
         // ...and the next tick posts a fresh one for the new route.
-        assert!(lp.post_if_idle(mk([-30.0, 0.0, 0.0], [-10.0, 0.0, 0.0], &col)), "B must post after a cancel");
+        assert!(
+            lp.post_if_idle(mk([-30.0, 0.0, 0.0], [-10.0, 0.0, 0.0], &col)),
+            "B must post after a cancel"
+        );
 
         // A's answer is computed and DOES arrive. It must be dropped on the way in; only B may land.
         let mut applied = None;
         for _ in 0..2000 {
-            if let Some(r) = lp.poll() { applied = Some(r); break; }
+            if let Some(r) = lp.poll() {
+                applied = Some(r);
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         let rep = applied.expect("a fine plan must come back");
         assert_eq!(rep.start, [-30.0, 0.0, 0.0],
             "the applied plan must be the CURRENT route's — the ABANDONED one, which was computed and did \
              arrive, must have been discarded on the way in");
-        assert!(!lp.is_planning(), "handing the reply over clears the pending request");
+        assert!(
+            !lp.is_planning(),
+            "handing the reply over clears the pending request"
+        );
         for _ in 0..20 {
-            assert!(lp.poll().is_none(), "a stale fine reply must be DISCARDED, never queued for later");
+            assert!(
+                lp.poll().is_none(),
+                "a stale fine reply must be DISCARDED, never queued for later"
+            );
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
     }
@@ -1354,14 +1904,26 @@ mod tests {
         let mut lp = LocalPlanner::spawn(); // #787-NOT-PRODUCTION
         assert!(!lp.is_dead());
         lp.kill_worker_for_test();
-        lp.post_if_idle(LocalRequest { gen: 0, start: [-20.0, 0.0, 0.0], goal: [20.0, 0.0, 0.0],
-            cell: 2.0, bound: 40.0, carrot_tol: 4.0, collision: col });
+        lp.post_if_idle(LocalRequest {
+            gen: 0,
+            start: [-20.0, 0.0, 0.0],
+            goal: [20.0, 0.0, 0.0],
+            cell: 2.0,
+            bound: 40.0,
+            carrot_tol: 4.0,
+            collision: col,
+        });
         for _ in 0..50 {
             assert!(lp.poll().is_none(), "a dead planner cannot produce a plan");
-            if lp.is_dead() { break; }
+            if lp.is_dead() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert!(lp.is_dead(), "a dead fine worker MUST be detected, not silently 'still thinking'");
+        assert!(
+            lp.is_dead(),
+            "a dead fine worker MUST be detected, not silently 'still thinking'"
+        );
         assert!(!lp.is_planning(),
             "and it must not claim a plan is in flight: `tick` only skips POSTING while one is — if that \
              stuck true, the fine tier would never be re-posted even after a restart");
