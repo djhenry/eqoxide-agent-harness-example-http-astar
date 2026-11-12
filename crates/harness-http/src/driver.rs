@@ -108,6 +108,17 @@ impl Control {
         self.inner.lock().unwrap().manual = Some(Manual { movement, until });
     }
 
+    /// Ends any manual move, so a nav goal set afterwards is the one that drives the character.
+    pub fn cancel_manual(&self) {
+        self.inner.lock().unwrap().manual = None;
+    }
+
+    /// Stops the character: drops the nav goal and any manual move.
+    pub fn stop(&self) {
+        self.slots.stop();
+        self.cancel_manual();
+    }
+
     /// Queues one verb. The driver sends one verb per `Step`, oldest first. `false` when
     /// [`MAX_QUEUED_VERBS`] are already waiting; nothing is queued then.
     pub fn push_verb(&self, verb: AgentVerb) -> bool {
@@ -124,6 +135,10 @@ impl Control {
         self.inner.lock().unwrap().zone_lines.clone()
     }
 
+    /// Makes `obs` the latest observation without running the driver, for route tests. The driver
+    /// itself publishes inside [`Driver::tick`], after it has loaded the zone and dropped stale
+    /// verbs, so a caller who sees an observation never has a verb queued in response thrown away.
+    #[cfg(test)]
     pub(crate) fn publish(&self, obs: &Observation) {
         self.inner.lock().unwrap().latest = Some(obs.clone());
     }
@@ -187,6 +202,7 @@ impl Driver {
         if stale {
             inner.verbs.clear();
         }
+        inner.latest = Some(obs.clone());
         let verb = inner.verbs.pop_front();
         Step { movement, verb }
     }
@@ -211,7 +227,11 @@ impl Driver {
                 self.walker.set_zone(zone, collision);
                 self.loaded_zone = Some(zone.to_string());
             }
-            None => self.walker.clear_zone(),
+            None => {
+                self.walker.clear_zone();
+                // Returning to the previous zone must reload it, not trust a stale marker.
+                self.loaded_zone = None;
+            }
         }
         // Zone lines are fixed points of the zone, computed once per load attempt.
         let lines = self.walker.zone_lines(obs.own.pos);
@@ -271,7 +291,6 @@ pub fn run(mut link: impl Link, mut driver: Driver) {
             Ok(o) => o,
             Err(e) => break format!("observation stream ended: {e}"),
         };
-        control.publish(&obs);
         let step = driver.tick(&obs);
         if let Err(e) = link.send_step(&step) {
             break format!("step not sent: {e}");

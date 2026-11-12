@@ -206,6 +206,7 @@ async fn goto(State(c): State<Ctl>, Body(b): Body<GotoBody>) -> Response {
         }
     };
     apply_avoid(&c, b.avoid_aggro, b.aggro_buffer);
+    c.cancel_manual();
     let goal_id = c.slots().goto(goal);
     Json(json!({
         "goal_id": goal_id,
@@ -243,12 +244,13 @@ async fn follow(State(c): State<Ctl>, Body(b): Body<FollowBody>) -> Response {
         return text(StatusCode::CONFLICT, format!("'{}' is dead; nothing to follow", entity.name));
     }
     apply_avoid(&c, b.avoid_aggro, b.aggro_buffer);
+    c.cancel_manual();
     let goal_id = c.slots().follow(&entity.name, (entity.pos[0], entity.pos[1], entity.pos[2]));
     Json(json!({ "goal_id": goal_id, "matched": matched(entity) })).into_response()
 }
 
 async fn stop(State(c): State<Ctl>) -> Response {
-    c.slots().stop();
+    c.stop();
     text(StatusCode::OK, "stopped")
 }
 
@@ -627,6 +629,58 @@ mod tests {
         dead.dead = true;
         assert_eq!(drv.tick(&dead).verb, None);
         assert_eq!(drv.tick(&obs(vec![])).verb, None);
+    }
+
+    #[tokio::test]
+    async fn stop_ends_a_manual_move_and_goto_overrides_one() {
+        let (c, mut drv) = session(obs(vec![]));
+        c.manual(AgentMovement { dir: [0.0, 1.0], up: 0.0, jump: false, wish_heading: None }, std::time::Duration::from_secs(5));
+        assert_eq!(call(&c, "POST", "/v1/move/stop", "").await.0, StatusCode::OK);
+        // The manual move is gone: the tick after a stop does not keep running the character.
+        assert_ne!(drv.tick(&obs(vec![])).movement.map(|m| m.dir), Some([0.0, 1.0]));
+        c.manual(AgentMovement { dir: [0.0, 1.0], up: 0.0, jump: false, wish_heading: None }, std::time::Duration::from_secs(5));
+        assert_eq!(call(&c, "POST", "/v1/move/goto", r#"{"x":1,"y":2,"z":0}"#).await.0, StatusCode::OK);
+        assert_ne!(drv.tick(&obs(vec![])).movement.map(|m| m.dir), Some([0.0, 1.0]));
+    }
+
+    #[tokio::test]
+    async fn a_zone_that_failed_to_load_is_retried_when_the_character_comes_back_to_the_old_one() {
+        let control = Control::new(NavSlots::default());
+        let loads = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen = loads.clone();
+        let mut drv = driver::Driver::new(
+            control,
+            Box::new(move |z| {
+                seen.lock().unwrap().push(z.to_string());
+                None
+            }),
+        );
+        let in_zone = |drv: &mut driver::Driver, name: &str| {
+            let mut o = obs(vec![]);
+            o.own.zone_name = name.into();
+            drv.tick(&o);
+        };
+        in_zone(&mut drv, "qeynos");
+        in_zone(&mut drv, "freportw");
+        in_zone(&mut drv, "qeynos");
+        assert_eq!(*loads.lock().unwrap(), vec!["qeynos", "freportw", "qeynos"]);
+    }
+
+    #[tokio::test]
+    async fn an_observation_is_visible_only_after_the_driver_has_dropped_stale_verbs() {
+        let control = Control::new(NavSlots::default());
+        let mut drv = driver::Driver::new(control.clone(), Box::new(|_| None));
+        drv.tick(&obs(vec![]));
+        assert!(control.push_verb(AgentVerb::Interact(eqoxide_agent_protocol::verb::InteractVerb::Sit)));
+        let mut dead = obs(vec![]);
+        dead.dead = true;
+        // The tick that sees the death clears the old verb and only then publishes it.
+        let step = drv.tick(&dead);
+        assert_eq!(step.verb, None);
+        assert!(control.latest().unwrap().dead);
+        // A verb queued in response to that observation is kept and sent on the next tick.
+        assert!(control.push_verb(AgentVerb::Lifecycle(eqoxide_agent_protocol::verb::LifecycleVerb::Respawn)));
+        assert!(drv.tick(&dead).verb.is_some());
     }
 
     #[tokio::test]
