@@ -415,16 +415,6 @@ async fn jump(State(c): State<Ctl>) -> Response {
     )
 }
 
-fn queue(c: &Control, verb: AgentVerb, ok: impl Into<String>) -> Response {
-    if !c.push_verb(verb) {
-        return text(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many verbs queued; nothing was queued",
-        );
-    }
-    text(StatusCode::OK, ok)
-}
-
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct IdBody {
@@ -445,11 +435,12 @@ async fn target(State(c): State<Ctl>, Body(b): Body<IdBody>) -> Response {
             format!("no visible spawn with id {id}"),
         );
     }
-    queue(
+    send(
         &c,
         AgentVerb::Combat(CombatVerb::Target { spawn_id: id }),
         format!("targeting {id}"),
     )
+    .await
 }
 
 #[derive(Deserialize, Default)]
@@ -472,37 +463,37 @@ async fn target_name(State(c): State<Ctl>, Body(b): Body<NameBody>) -> Response 
             format!("no visible entity matching '{name}'"),
         );
     };
-    if !c.push_verb(AgentVerb::Combat(CombatVerb::Target {
+    let verb = AgentVerb::Combat(CombatVerb::Target {
         spawn_id: e.spawn_id,
-    })) {
-        return text(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many verbs queued; nothing was queued",
-        );
-    }
-    Json(json!({ "matched": matched(e) })).into_response()
+    });
+    send_with(&c, verb, || {
+        Json(json!({ "matched": matched(e) })).into_response()
+    })
+    .await
 }
 
 async fn attack_on(State(c): State<Ctl>) -> Response {
     if let Err(r) = live_alive(&c) {
         return r;
     }
-    queue(
+    send(
         &c,
         AgentVerb::Combat(CombatVerb::Attack { on: true }),
         "auto-attack on",
     )
+    .await
 }
 
 async fn attack_off(State(c): State<Ctl>) -> Response {
     if let Err(r) = live(&c) {
         return r;
     }
-    queue(
+    send(
         &c,
         AgentVerb::Combat(CombatVerb::Attack { on: false }),
         "auto-attack off",
     )
+    .await
 }
 
 async fn consider(State(c): State<Ctl>, Body(b): Body<IdBody>) -> Response {
@@ -519,11 +510,12 @@ async fn consider(State(c): State<Ctl>, Body(b): Body<IdBody>) -> Response {
             format!("no visible spawn with id {id}"),
         );
     }
-    queue(
+    send(
         &c,
         AgentVerb::Combat(CombatVerb::Consider { spawn_id: id }),
         format!("considering {id}"),
     )
+    .await
 }
 
 #[derive(Deserialize, Default)]
@@ -544,7 +536,7 @@ async fn cast(State(c): State<Ctl>, Body(b): Body<CastBody>) -> Response {
     if gem > 8 {
         return bad("gem must be 0-8");
     }
-    queue(
+    send(
         &c,
         AgentVerb::Combat(CombatVerb::Cast(CastRequest {
             gem,
@@ -553,38 +545,45 @@ async fn cast(State(c): State<Ctl>, Body(b): Body<CastBody>) -> Response {
         })),
         format!("casting gem {gem}"),
     )
+    .await
 }
 
 async fn sit(State(c): State<Ctl>) -> Response {
     if let Err(r) = live_alive(&c) {
         return r;
     }
-    queue(&c, AgentVerb::Interact(InteractVerb::Sit), "sitting")
+    send(&c, AgentVerb::Interact(InteractVerb::Sit), "sitting").await
 }
 
 async fn stand(State(c): State<Ctl>) -> Response {
     if let Err(r) = live_alive(&c) {
         return r;
     }
-    queue(&c, AgentVerb::Interact(InteractVerb::Stand), "standing")
+    send(&c, AgentVerb::Interact(InteractVerb::Stand), "standing").await
 }
 
 async fn respawn(State(c): State<Ctl>) -> Response {
     if let Err(r) = live(&c) {
         return r;
     }
-    queue(
+    send(
         &c,
         AgentVerb::Lifecycle(LifecycleVerb::Respawn),
         "respawn requested",
     )
+    .await
 }
 
 /// Queues `verb` and answers with eqoxide's verdict on it: `200 ok` only once eqoxide says it took
 /// the verb, so a refusal is never reported as success.
 async fn send(c: &Control, verb: AgentVerb, ok: impl Into<String>) -> Response {
+    send_with(c, verb, || text(StatusCode::OK, ok)).await
+}
+
+/// As [`send`], with `accepted` building the success response.
+async fn send_with(c: &Control, verb: AgentVerb, accepted: impl FnOnce() -> Response) -> Response {
     match c.verb(verb).await {
-        VerbReply::Accepted => text(StatusCode::OK, ok),
+        VerbReply::Accepted => accepted(),
         VerbReply::Refused(why) => {
             let code = if why.starts_with("no item") {
                 StatusCode::NOT_FOUND
@@ -952,7 +951,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_verb_route_rides_the_next_step_exactly_once() {
-        let (c, mut drv) = session(obs(vec![entity(7, "a_rat00", [5.0, 0.0, 0.0], false)]));
+        let world = obs(vec![entity(7, "a_rat00", [5.0, 0.0, 0.0], false)]);
+        let (c, mut drv) = session(world.clone());
         assert_eq!(
             call(&c, "POST", "/v1/combat/target", r#"{"id":99}"#)
                 .await
@@ -960,19 +960,37 @@ mod tests {
             StatusCode::NOT_FOUND
         );
         assert_eq!(
-            call(&c, "POST", "/v1/combat/target", r#"{"id":7}"#).await.0,
-            StatusCode::OK
-        );
-        assert_eq!(
             call(&c, "POST", "/v1/combat/cast", r#"{"gem":9}"#).await.0,
             StatusCode::BAD_REQUEST
         );
-        let o = obs(vec![]);
+        let (code, body, verb) = answered_in(
+            &world,
+            &c,
+            &mut drv,
+            "/v1/combat/target",
+            r#"{"id":7}"#,
+            Some(VerbOutcome::Accepted),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
         assert_eq!(
-            drv.tick(&o).verb,
+            verb,
             Some(AgentVerb::Combat(CombatVerb::Target { spawn_id: 7 }))
         );
-        assert_eq!(drv.tick(&o).verb, None);
+        assert_eq!(drv.tick(&world).verb, None);
+
+        // A verb eqoxide refuses is a 409 carrying its reason, never a 200.
+        let (code, body, _) = answered_in(
+            &world,
+            &c,
+            &mut drv,
+            "/v1/combat/attack",
+            "",
+            Some(VerbOutcome::Refused("already attacking".into())),
+        )
+        .await;
+        assert_eq!(code, StatusCode::CONFLICT, "{body}");
+        assert_eq!(body, "already attacking");
     }
 
     #[tokio::test]
@@ -1103,17 +1121,29 @@ mod tests {
         body: &str,
         outcome: Option<VerbOutcome>,
     ) -> (StatusCode, String, Option<AgentVerb>) {
+        answered_in(&obs(vec![]), c, drv, uri, body, outcome).await
+    }
+
+    /// As [`answered`], with `world` as the observation each step sees.
+    async fn answered_in(
+        world: &Observation,
+        c: &Arc<Control>,
+        drv: &mut driver::Driver,
+        uri: &str,
+        body: &str,
+        outcome: Option<VerbOutcome>,
+    ) -> (StatusCode, String, Option<AgentVerb>) {
         let (c2, uri, body) = (c.clone(), uri.to_string(), body.to_string());
         let req = tokio::spawn(async move { call(&c2, "POST", &uri, &body).await });
         let (verb, seq) = loop {
-            let step = drv.tick(&obs(vec![]));
+            let step = drv.tick(world);
             if step.verb.is_some() || req.is_finished() {
                 break (step.verb, step.seq);
             }
             tokio::task::yield_now().await;
         };
         if let (Some(outcome), Some(seq)) = (outcome, seq) {
-            let mut o = obs(vec![]);
+            let mut o = world.clone();
             o.verb_results = vec![VerbResult { seq, outcome }];
             drv.tick(&o);
         }
@@ -1247,21 +1277,29 @@ mod tests {
     #[tokio::test]
     async fn the_verb_queue_is_bounded_and_dropped_on_death() {
         let (c, mut drv) = session(obs(vec![entity(7, "a_rat00", [5.0, 0.0, 0.0], false)]));
-        for _ in 0..driver::MAX_QUEUED_VERBS {
-            assert_eq!(
-                call(&c, "POST", "/v1/combat/attack", "").await.0,
-                StatusCode::OK
-            );
+        // Each waiting request holds one queue slot until eqoxide answers it.
+        let waiting: Vec<_> = (0..driver::MAX_QUEUED_VERBS)
+            .map(|_| {
+                let c = c.clone();
+                tokio::spawn(async move { call(&c, "POST", "/v1/combat/attack", "").await })
+            })
+            .collect();
+        while c.verb_queue_len() < driver::MAX_QUEUED_VERBS {
+            tokio::task::yield_now().await;
         }
         assert_eq!(
             call(&c, "POST", "/v1/combat/attack", "").await.0,
             StatusCode::TOO_MANY_REQUESTS
         );
-        drv.tick(&obs(vec![]));
         let mut dead = obs(vec![]);
         dead.dead = true;
         assert_eq!(drv.tick(&dead).verb, None);
         assert_eq!(drv.tick(&obs(vec![])).verb, None);
+        // The dropped verbs' callers are told, not left to time out.
+        for request in waiting {
+            let (code, body) = request.await.unwrap();
+            assert_eq!(code, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+        }
     }
 
     #[tokio::test]
