@@ -21,7 +21,7 @@ This repo bootstraps the reference agent harness described in eqoxide's
   - `move`: `goto`, `follow`, `stop`, `manual`, `jump`
   - `combat`: `target`, `target/name`, `attack` (`POST` and `DELETE`), `consider`, `cast`
   - `interact`: `sit`, `stand`. `lifecycle`: `respawn`, `camp`, `exit`
-  - `inventory`: `move`. `pet`: `command` (`command` byte or `name`, not both).
+  - `inventory`: `move`, `destroy` and `consume` (each `{"slot":N}`; `Accepted` for consume means sent, not eaten). `pet`: `command` (`command` byte or `name`, not both).
     `chat`: `tell`, `ooc`, `shout`, `group`, `guild`
   - `observe`: `state` (the whole `Observation`), `entities`, `nav` (goal status and walker notices),
     `zone_lines` (each zone line's index and a standable point). There is no cross route: walk to a
