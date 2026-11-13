@@ -20,11 +20,18 @@ This repo bootstraps the reference agent harness described in eqoxide's
   `/v1/<group>/<action>` paths eqoxide's own HTTP API used:
   - `move`: `goto`, `follow`, `stop`, `manual`, `jump`
   - `combat`: `target`, `target/name`, `attack` (`POST` and `DELETE`), `consider`, `cast`
-  - `interact`: `sit`, `stand`. `lifecycle`: `respawn`
+  - `interact`: `sit`, `stand`. `lifecycle`: `respawn`, `camp`, `exit`
+  - `inventory`: `move`. `pet`: `command` (`command` byte or `name`, not both).
+    `chat`: `tell`, `ooc`, `shout`, `group`, `guild`
   - `observe`: `state` (the whole `Observation`), `entities`, `nav` (goal status and walker notices),
     `zone_lines` (each zone line's index and a standable point). There is no cross route: walk to a
     line with `goto` and eqoxide fires the crossing itself.
   - `GET /health`
+  - The `lifecycle`/`inventory`/`pet`/`chat` verb routes answer `200` only once eqoxide has said it
+    took the verb (the `Step`'s `seq` is echoed in the next `Observation`'s `verb_results`). A
+    refusal is `409` (`404` for an empty inventory slot) with eqoxide's reason; a verb dropped
+    before it was sent (zone change, death) or never answered is `503`. The older verb routes
+    above still answer `200` once the verb is queued.
   - everything else under `/v1/`: forwarded to eqoxide as a call (see below)
 - **`crates/harness-combat/examples/chase_nearest_npc.rs`**: a worked, buildable example
   combining `harness-socket` and `harness-combat` the way a real caller would: connect, watch for
@@ -37,7 +44,7 @@ This repo bootstraps the reference agent harness described in eqoxide's
   `crates/eqoxide-nav/src/{planner,walker,steering,traversability}.rs` (~19,000 lines combined in
   the eqoxide repo today). A separate, dedicated plan covers this port.
 - **Serving the rest of eqoxide's HTTP surface natively.** Every other `/v1/...` route
-  (`merchant`, `inventory`, `quests`, `chat`, `group`, `guild`, `pet`, `trainer`, `social`, the
+  (`merchant`, `quests`, `group`, `guild`, `trainer`, `social`, `interact` beyond `sit`/`stand`, the
   `events` feed, and the remaining `observe` routes) is forwarded to eqoxide as a `Call` over the
   agent socket (protocol v4) and answered with eqoxide's reply: the call's `op` is
   `"<METHOD> <path>"`, its `args` carry `query` and `body`, and the `CallStatus` becomes the HTTP

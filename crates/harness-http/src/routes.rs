@@ -1,7 +1,7 @@
 //! The agent control routes, under the same `/v1/<group>/<action>` paths eqoxide's own HTTP API
 //! used. Every route answers from the latest `Observation` or queues intent for the driver.
 
-use crate::driver::Control;
+use crate::driver::{Control, VerbReply};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -10,7 +10,8 @@ use axum::{Json, Router};
 use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::{Observation, VisibleEntity};
 use eqoxide_agent_protocol::verb::{
-    AgentVerb, CastRequest, CombatVerb, InteractVerb, LifecycleVerb,
+    AgentVerb, CastRequest, ChatVerb, CombatVerb, InteractVerb, InventoryVerb, LifecycleVerb,
+    PetVerb,
 };
 use harness_nav::status::{AggroAvoidOpts, NavStatus};
 use harness_nav::walker::ZoneLinesError;
@@ -44,6 +45,15 @@ pub fn router() -> Router<Ctl> {
         .route("/v1/interact/sit", post(sit))
         .route("/v1/interact/stand", post(stand))
         .route("/v1/lifecycle/respawn", post(respawn))
+        .route("/v1/lifecycle/camp", post(camp))
+        .route("/v1/lifecycle/exit", post(exit))
+        .route("/v1/inventory/move", post(inventory_move))
+        .route("/v1/pet/command", post(pet_command))
+        .route("/v1/chat/tell", post(chat_tell))
+        .route("/v1/chat/ooc", post(chat_ooc))
+        .route("/v1/chat/shout", post(chat_shout))
+        .route("/v1/chat/group", post(chat_group))
+        .route("/v1/chat/guild", post(chat_guild))
 }
 
 fn text(code: StatusCode, msg: impl Into<String>) -> Response {
@@ -570,6 +580,185 @@ async fn respawn(State(c): State<Ctl>) -> Response {
     )
 }
 
+/// Queues `verb` and answers with eqoxide's verdict on it: `200 ok` only once eqoxide says it took
+/// the verb, so a refusal is never reported as success.
+async fn send(c: &Control, verb: AgentVerb, ok: impl Into<String>) -> Response {
+    match c.verb(verb).await {
+        VerbReply::Accepted => text(StatusCode::OK, ok),
+        VerbReply::Refused(why) => {
+            let code = if why.starts_with("no item") {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::CONFLICT
+            };
+            text(code, why)
+        }
+        VerbReply::NotQueued => text(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many verbs queued; nothing was queued",
+        ),
+        VerbReply::Lost(why) => text(StatusCode::SERVICE_UNAVAILABLE, why),
+    }
+}
+
+async fn camp(State(c): State<Ctl>) -> Response {
+    if let Err(r) = live(&c) {
+        return r;
+    }
+    send(
+        &c,
+        AgentVerb::Lifecycle(LifecycleVerb::Camp),
+        "camp toggled",
+    )
+    .await
+}
+
+async fn exit(State(c): State<Ctl>) -> Response {
+    if let Err(r) = live(&c) {
+        return r;
+    }
+    send(
+        &c,
+        AgentVerb::Lifecycle(LifecycleVerb::Exit),
+        "exit requested: camping out, then shutting down",
+    )
+    .await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MoveBody {
+    from: u32,
+    to: u32,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct MaybeMoveBody {
+    from: Option<u32>,
+    to: Option<u32>,
+}
+
+async fn inventory_move(State(c): State<Ctl>, Body(b): Body<MaybeMoveBody>) -> Response {
+    if let Err(r) = live(&c) {
+        return r;
+    }
+    let MoveBody { from, to } = match b {
+        MaybeMoveBody {
+            from: Some(from),
+            to: Some(to),
+        } => MoveBody { from, to },
+        _ => return bad("provide {\"from\":N,\"to\":M}"),
+    };
+    send(
+        &c,
+        AgentVerb::Inventory(InventoryVerb::Move { from, to }),
+        format!("moving item from slot {from} to slot {to}"),
+    )
+    .await
+}
+
+/// `PET_*` command bytes (EQEmu zone/common.h).
+const PET_ATTACK: u8 = 2;
+const PET_FOLLOWME: u8 = 4;
+const PET_GUARDHERE: u8 = 5;
+const PET_SIT: u8 = 6;
+const PET_BACKOFF: u8 = 28;
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PetBody {
+    command: Option<u8>,
+    name: Option<String>,
+}
+
+async fn pet_command(State(c): State<Ctl>, Body(b): Body<PetBody>) -> Response {
+    if let Err(r) = live(&c) {
+        return r;
+    }
+    // `command` and `name` are two spellings of one command: giving both is two different commands
+    // or one redundant one, and silently picking either would hide which.
+    let command = match (b.command, b.name.as_deref()) {
+        (Some(_), Some(_)) => return bad("give either \"command\" or \"name\", not both"),
+        (Some(n), None) => n,
+        (None, Some(name)) => {
+            match name.to_ascii_lowercase().as_str() {
+                "attack" => PET_ATTACK,
+                "backoff" | "back_off" => PET_BACKOFF,
+                "follow" => PET_FOLLOWME,
+                "guard" => PET_GUARDHERE,
+                "sit" => PET_SIT,
+                _ => return bad(
+                    "unknown pet command; use a PET_* number or attack|backoff|follow|guard|sit",
+                ),
+            }
+        }
+        (None, None) => {
+            return bad("provide {\"command\":N} or {\"name\":\"attack|backoff|follow|guard|sit\"}")
+        }
+    };
+    send(
+        &c,
+        AgentVerb::Pet(PetVerb::Command { command }),
+        format!("pet command {command} queued"),
+    )
+    .await
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct TellBody {
+    to: Option<String>,
+    text: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct TextBody {
+    text: Option<String>,
+}
+
+async fn chat_tell(State(c): State<Ctl>, Body(b): Body<TellBody>) -> Response {
+    if let Err(r) = live(&c) {
+        return r;
+    }
+    let (Some(to), Some(text_)) = (b.to, b.text) else {
+        return bad("tell requires non-empty 'to' and 'text'");
+    };
+    if to.trim().is_empty() || text_.trim().is_empty() {
+        return bad("tell requires non-empty 'to' and 'text'");
+    }
+    let ok = format!("tell queued to {to}");
+    send(&c, AgentVerb::Chat(ChatVerb::Tell { to, text: text_ }), ok).await
+}
+
+/// A broadcast chat route: `text` must be non-blank, then `make` builds the verb.
+async fn broadcast(c: &Control, name: &str, b: TextBody, make: fn(String) -> ChatVerb) -> Response {
+    if let Err(r) = live(c) {
+        return r;
+    }
+    let Some(t) = b.text.filter(|t| !t.trim().is_empty()) else {
+        return bad(format!("{name} requires 'text'"));
+    };
+    send(c, AgentVerb::Chat(make(t)), format!("{name} queued")).await
+}
+
+async fn chat_ooc(State(c): State<Ctl>, Body(b): Body<TextBody>) -> Response {
+    broadcast(&c, "ooc", b, |text| ChatVerb::Ooc { text }).await
+}
+
+async fn chat_shout(State(c): State<Ctl>, Body(b): Body<TextBody>) -> Response {
+    broadcast(&c, "shout", b, |text| ChatVerb::Shout { text }).await
+}
+
+async fn chat_group(State(c): State<Ctl>, Body(b): Body<TextBody>) -> Response {
+    broadcast(&c, "group", b, |text| ChatVerb::Group { text }).await
+}
+
+async fn chat_guild(State(c): State<Ctl>, Body(b): Body<TextBody>) -> Response {
+    broadcast(&c, "guild", b, |text| ChatVerb::Guild { text }).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,6 +767,7 @@ mod tests {
     use axum::http::Request;
     use eqoxide_agent_protocol::observation::{LegalActionMask, OwnState};
     use eqoxide_agent_protocol::step::Step;
+    use eqoxide_agent_protocol::verb_result::{VerbOutcome, VerbResult};
     use harness_nav::status::NavSlots;
     use std::sync::mpsc;
     use tower::ServiceExt;
@@ -904,6 +1094,156 @@ mod tests {
         );
     }
 
+    /// Sends `uri` and plays eqoxide: the verb it queues rides the next `Step` (returned with it),
+    /// and the following `Observation` answers it with `outcome` when that is `Some`.
+    async fn answered(
+        c: &Arc<Control>,
+        drv: &mut driver::Driver,
+        uri: &str,
+        body: &str,
+        outcome: Option<VerbOutcome>,
+    ) -> (StatusCode, String, Option<AgentVerb>) {
+        let (c2, uri, body) = (c.clone(), uri.to_string(), body.to_string());
+        let req = tokio::spawn(async move { call(&c2, "POST", &uri, &body).await });
+        let (verb, seq) = loop {
+            let step = drv.tick(&obs(vec![]));
+            if step.verb.is_some() || req.is_finished() {
+                break (step.verb, step.seq);
+            }
+            tokio::task::yield_now().await;
+        };
+        if let (Some(outcome), Some(seq)) = (outcome, seq) {
+            let mut o = obs(vec![]);
+            o.verb_results = vec![VerbResult { seq, outcome }];
+            drv.tick(&o);
+        }
+        let (code, body) = req.await.unwrap();
+        (code, body, verb)
+    }
+
+    #[tokio::test]
+    async fn a_refused_verb_is_a_409_and_an_accepted_one_is_a_200() {
+        let (c, mut drv) = session(obs(vec![]));
+        let (code, body, verb) = answered(
+            &c,
+            &mut drv,
+            "/v1/inventory/move",
+            r#"{"from":23,"to":30}"#,
+            Some(VerbOutcome::Refused("no item in slot 23 to move".into())),
+        )
+        .await;
+        assert_eq!(code, StatusCode::NOT_FOUND, "{body}");
+        assert!(body.contains("no item in slot 23"));
+        assert_eq!(
+            verb,
+            Some(AgentVerb::Inventory(InventoryVerb::Move {
+                from: 23,
+                to: 30
+            }))
+        );
+        let (code, body, _) = answered(
+            &c,
+            &mut drv,
+            "/v1/pet/command",
+            r#"{"name":"attack"}"#,
+            Some(VerbOutcome::Refused(
+                "a pet command is already queued".into(),
+            )),
+        )
+        .await;
+        assert_eq!(code, StatusCode::CONFLICT, "{body}");
+        let (code, _, verb) = answered(
+            &c,
+            &mut drv,
+            "/v1/pet/command",
+            r#"{"name":"Backoff"}"#,
+            Some(VerbOutcome::Accepted),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(verb, Some(AgentVerb::Pet(PetVerb::Command { command: 28 })));
+    }
+
+    #[tokio::test]
+    async fn a_verb_dropped_on_a_zone_change_is_503_not_ok() {
+        let (c, mut drv) = session(obs(vec![]));
+        // The first zone of a session is not a change, so settle it before queueing.
+        drv.tick(&obs(vec![]));
+        let c2 = c.clone();
+        let req = tokio::spawn(async move { call(&c2, "POST", "/v1/lifecycle/camp", "").await });
+        // Wait for the verb to be queued, then change zone before it is sent.
+        while c.verb_queue_len() == 0 {
+            tokio::task::yield_now().await;
+        }
+        let mut other = obs(vec![]);
+        other.own.zone_name = "elsewhere".into();
+        assert_eq!(drv.tick(&other).verb, None);
+        let (code, body) = req.await.unwrap();
+        assert_eq!(code, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    }
+
+    #[tokio::test]
+    async fn chat_and_pet_bodies_are_validated_before_anything_is_queued() {
+        let (c, mut drv) = session(obs(vec![]));
+        for (uri, body) in [
+            ("/v1/chat/tell", r#"{"to":"  ","text":"hi"}"#),
+            ("/v1/chat/tell", r#"{"text":"hi"}"#),
+            ("/v1/chat/ooc", r#"{"text":" "}"#),
+            ("/v1/chat/guild", ""),
+            ("/v1/pet/command", r#"{"command":2,"name":"sit"}"#),
+            ("/v1/pet/command", r#"{"name":"dance"}"#),
+            ("/v1/pet/command", ""),
+            ("/v1/inventory/move", r#"{"from":23}"#),
+        ] {
+            assert_eq!(
+                call(&c, "POST", uri, body).await.0,
+                StatusCode::BAD_REQUEST,
+                "{uri} {body}"
+            );
+        }
+        assert_eq!(drv.tick(&obs(vec![])).verb, None);
+    }
+
+    #[tokio::test]
+    async fn a_chat_route_queues_the_matching_verb() {
+        let (c, mut drv) = session(obs(vec![]));
+        let (code, _, verb) = answered(
+            &c,
+            &mut drv,
+            "/v1/chat/tell",
+            r#"{"to":"Bob","text":"hi"}"#,
+            Some(VerbOutcome::Accepted),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(
+            verb,
+            Some(AgentVerb::Chat(ChatVerb::Tell {
+                to: "Bob".into(),
+                text: "hi".into()
+            }))
+        );
+    }
+
+    #[tokio::test]
+    async fn every_new_verb_route_is_503_before_the_first_observation() {
+        let c = Control::new(NavSlots::default());
+        for uri in [
+            "/v1/lifecycle/camp",
+            "/v1/lifecycle/exit",
+            "/v1/inventory/move",
+            "/v1/pet/command",
+            "/v1/chat/tell",
+            "/v1/chat/ooc",
+        ] {
+            assert_eq!(
+                call(&c, "POST", uri, "{}").await.0,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "{uri}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn the_verb_queue_is_bounded_and_dropped_on_death() {
         let (c, mut drv) = session(obs(vec![entity(7, "a_rat00", [5.0, 0.0, 0.0], false)]));
@@ -1019,7 +1359,7 @@ mod tests {
             call(
                 &c2,
                 "POST",
-                "/v1/inventory/move?x=1",
+                "/v1/merchant/buy?x=1",
                 "{\"from\":23,\"to\":30}",
             )
             .await
@@ -1033,7 +1373,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(5)).await;
         };
         assert_eq!(step.calls.len(), 1);
-        assert_eq!(step.calls[0].op, "POST /v1/inventory/move");
+        assert_eq!(step.calls[0].op, "POST /v1/merchant/buy");
         assert_eq!(
             step.calls[0].args,
             json!({"query": {"x": "1"}, "body": {"from": 23, "to": 30}})

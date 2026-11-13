@@ -7,6 +7,7 @@ use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::Observation;
 use eqoxide_agent_protocol::step::Step;
 use eqoxide_agent_protocol::verb::AgentVerb;
+use eqoxide_agent_protocol::verb_result::VerbOutcome;
 use eqoxide_zone_geometry::collision::Collision;
 use harness_combat::engage::engage;
 use harness_nav::diagnostics::NavDebugView;
@@ -55,7 +56,11 @@ struct Manual {
 struct Inner {
     latest: Option<Observation>,
     manual: Option<Manual>,
-    verbs: VecDeque<AgentVerb>,
+    /// Verbs waiting for a `Step`, oldest first, each with the `seq` its caller waits on (if any).
+    verbs: VecDeque<(AgentVerb, Option<u64>)>,
+    /// Callers waiting for eqoxide's answer to a verb already queued or sent, by `seq`.
+    verb_waiters: HashMap<u64, tokio::sync::oneshot::Sender<VerbOutcome>>,
+    next_seq: u64,
     zone_lines: Option<Result<Vec<ZoneLine>, ZoneLinesError>>,
     notices: VecDeque<String>,
     ended: Option<String>,
@@ -72,6 +77,23 @@ pub const MAX_QUEUED_VERBS: usize = 16;
 /// Most calls that may be sent or queued and not yet answered. eqoxide answers a call past its own
 /// bound (32) `Unavailable`; staying under it here means that never happens.
 pub const MAX_CALLS_IN_FLIGHT: usize = 32;
+
+/// Longest a caller waits for eqoxide's answer to a verb. A verb rides the next `Step`, one per
+/// tick, so this covers a full queue.
+pub const VERB_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// What became of a verb sent with [`Control::verb`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VerbReply {
+    /// eqoxide took the verb and handed it to the game.
+    Accepted,
+    /// eqoxide declined the verb, with the reason. Nothing happened.
+    Refused(String),
+    /// [`MAX_QUEUED_VERBS`] were already waiting; nothing was queued.
+    NotQueued,
+    /// No answer will come, and the string says what is known about whether the verb happened.
+    Lost(String),
+}
 
 /// Longest a caller waits for a call's reply before it is given up on.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -147,8 +169,51 @@ impl Control {
         if inner.verbs.len() >= MAX_QUEUED_VERBS {
             return false;
         }
-        inner.verbs.push_back(verb);
+        inner.verbs.push_back((verb, None));
         true
+    }
+
+    /// Queues `verb` and waits for eqoxide's answer to it, so a refusal reaches the caller instead of
+    /// being reported as success.
+    pub async fn verb(&self, verb: AgentVerb) -> VerbReply {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let seq = {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(why) = &inner.ended {
+                return VerbReply::Lost(format!("the session has ended: {why}"));
+            }
+            if inner.verbs.len() >= MAX_QUEUED_VERBS {
+                return VerbReply::NotQueued;
+            }
+            let seq = inner.next_seq;
+            inner.next_seq += 1;
+            inner.verb_waiters.insert(seq, tx);
+            inner.verbs.push_back((verb, Some(seq)));
+            seq
+        };
+        match tokio::time::timeout(VERB_TIMEOUT, rx).await {
+            Ok(Ok(VerbOutcome::Accepted)) => VerbReply::Accepted,
+            Ok(Ok(VerbOutcome::Refused(why))) => VerbReply::Refused(why),
+            Ok(Err(_)) => VerbReply::Lost(
+                "the verb was dropped before eqoxide answered (the zone changed, the character died or respawned, or the session ended); it was not acted on".into(),
+            ),
+            Err(_) => {
+                let mut inner = self.inner.lock().unwrap();
+                inner.verb_waiters.remove(&seq);
+                let before = inner.verbs.len();
+                inner.verbs.retain(|(_, s)| *s != Some(seq));
+                if inner.verbs.len() < before {
+                    VerbReply::Lost("eqoxide did not take the verb in time; it was not sent".into())
+                } else {
+                    VerbReply::Lost("eqoxide did not answer the verb in time; it may or may not have happened".into())
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn verb_queue_len(&self) -> usize {
+        self.inner.lock().unwrap().verbs.len()
     }
 
     /// Runs `op` on eqoxide and waits for its reply. A call that gets no reply within
@@ -210,6 +275,7 @@ impl Control {
         // Dropping the senders wakes every waiting caller.
         inner.waiting.clear();
         inner.calls.clear();
+        inner.verb_waiters.clear();
     }
 }
 
@@ -284,7 +350,11 @@ impl Driver {
             inner.notices.push_back(n);
         }
         if stale {
-            inner.verbs.clear();
+            let dropped: Vec<u64> = inner.verbs.drain(..).filter_map(|(_, s)| s).collect();
+            for seq in dropped {
+                // Dropping the sender tells the caller its verb was not acted on.
+                inner.verb_waiters.remove(&seq);
+            }
         }
         inner.latest = Some(obs.clone());
         for reply in &obs.call_replies {
@@ -292,12 +362,20 @@ impl Driver {
                 let _ = waiter.send(reply.clone());
             }
         }
-        let verb = inner.verbs.pop_front();
+        for r in &obs.verb_results {
+            if let Some(waiter) = inner.verb_waiters.remove(&r.seq) {
+                let _ = waiter.send(r.outcome.clone());
+            }
+        }
+        let (verb, seq) = match inner.verbs.pop_front() {
+            Some((v, s)) => (Some(v), s),
+            None => (None, None),
+        };
         let calls = inner.calls.drain(..).collect();
         Step {
             movement,
             verb,
-            seq: None,
+            seq,
             calls,
         }
     }

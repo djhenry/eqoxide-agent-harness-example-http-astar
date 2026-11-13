@@ -10,5 +10,5 @@ path = "src/lib.rs"
 [dependencies]
 # Zero-eqoxide-internal-dependency wire types (eqoxide's own docs/agent-api.md: "zero dependency on
 # any other eqoxide crate") — this is the one crate in this workspace that talks to eqoxide at all.
-eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "78d0bccd1013ba3e49ec1a60301c41f01a68e834" }
+eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "149a889204523120560f96419e785d5b4e74449b" }
 serde_json = "1"
