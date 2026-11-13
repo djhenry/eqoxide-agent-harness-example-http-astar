@@ -165,6 +165,8 @@ mod tests {
             truncated: false,
             visibility_available: true,
             tick,
+            verb_results: vec![],
+            call_replies: vec![],
         }
     }
 
@@ -216,6 +218,8 @@ mod tests {
                     wish_heading: None,
                 }),
                 verb: None,
+                seq: None,
+                calls: vec![],
             })
             .expect("send step");
         let obs = client.recv_observation().expect("recv observation");

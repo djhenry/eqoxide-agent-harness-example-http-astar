@@ -1323,6 +1323,8 @@ mod tests {
             truncated: false,
             visibility_available: true,
             tick: 0,
+            verb_results: vec![],
+            call_replies: vec![],
         }
     }
 

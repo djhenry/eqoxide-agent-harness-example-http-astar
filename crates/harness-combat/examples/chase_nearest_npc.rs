@@ -58,6 +58,8 @@ fn main() {
             .send_step(&Step {
                 movement: Some(movement),
                 verb: None,
+                seq: None,
+                calls: vec![],
             })
             .expect("send step");
     }
