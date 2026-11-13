@@ -16,8 +16,8 @@ harness-socket = { path = "../harness-socket" }
 harness-nav = { path = "../harness-nav" }
 harness-combat = { path = "../harness-combat" }
 # Every git dependency on this URL shares one rev (see docs/scope.md, "Bumping the eqoxide pin").
-eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "78d0bccd1013ba3e49ec1a60301c41f01a68e834" }
-eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "78d0bccd1013ba3e49ec1a60301c41f01a68e834" }
+eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "149a889204523120560f96419e785d5b4e74449b" }
+eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "149a889204523120560f96419e785d5b4e74449b" }
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
