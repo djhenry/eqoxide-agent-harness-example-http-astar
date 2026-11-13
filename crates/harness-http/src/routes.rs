@@ -1308,7 +1308,9 @@ mod tests {
             &mut drv,
             "/v1/inventory/consume",
             r#"{"slot":26}"#,
-            Some(VerbOutcome::Refused("Bread in slot 26 is not food or drink".into())),
+            Some(VerbOutcome::Refused(
+                "Bread in slot 26 is not food or drink".into(),
+            )),
         )
         .await;
         assert_eq!(code, StatusCode::CONFLICT, "{body}");
