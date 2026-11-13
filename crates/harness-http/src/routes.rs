@@ -630,6 +630,8 @@ mod tests {
             truncated: false,
             visibility_available: true,
             tick: 0,
+            verb_results: vec![],
+            call_replies: vec![],
         }
     }
 
@@ -1009,11 +1011,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn zone_cross_is_no_longer_a_route() {
-        let (c, _) = session(obs(vec![]));
+    async fn an_unserved_route_is_forwarded_as_a_call_and_answered_with_eqoxides_reply() {
+        use eqoxide_agent_protocol::call::{CallReply, CallStatus};
+        let (c, mut drv) = session(obs(vec![]));
+        let c2 = c.clone();
+        let request = tokio::spawn(async move {
+            call(
+                &c2,
+                "POST",
+                "/v1/inventory/move?x=1",
+                "{\"from\":23,\"to\":30}",
+            )
+            .await
+        });
+        // Tick until the call rides out in a Step.
+        let step = loop {
+            let step = drv.tick(&obs(vec![]));
+            if !step.calls.is_empty() {
+                break step;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+        assert_eq!(step.calls.len(), 1);
+        assert_eq!(step.calls[0].op, "POST /v1/inventory/move");
         assert_eq!(
-            call(&c, "POST", "/v1/move/zone_cross", "{}").await.0,
-            StatusCode::NOT_FOUND
+            step.calls[0].args,
+            json!({"query": {"x": "1"}, "body": {"from": 23, "to": 30}})
         );
+        let mut reply_obs = obs(vec![]);
+        reply_obs.call_replies = vec![CallReply {
+            id: step.calls[0].id,
+            status: CallStatus::Conflict,
+            body: json!("a move is already queued"),
+        }];
+        drv.tick(&reply_obs);
+        let (code, body) = request.await.unwrap();
+        assert_eq!(code, StatusCode::CONFLICT);
+        assert_eq!(body, "\"a move is already queued\"");
+    }
+
+    #[tokio::test]
+    async fn a_forwarded_call_is_refused_when_the_session_has_ended() {
+        let (c, _) = session(obs(vec![]));
+        c.end_for_test("link down");
+        let (code, _) = call(&c, "GET", "/v1/observe/skills", "").await;
+        assert_eq!(code, StatusCode::SERVICE_UNAVAILABLE);
     }
 }

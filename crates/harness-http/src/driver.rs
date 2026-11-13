@@ -2,6 +2,7 @@
 //! each `Observation`, and answers it with exactly one `Step`. Route handlers never touch the
 //! socket: they publish intent into [`Control`], and the driver reads it on the next observation.
 
+use eqoxide_agent_protocol::call::{Call, CallReply, CallStatus};
 use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::Observation;
 use eqoxide_agent_protocol::step::Step;
@@ -12,7 +13,7 @@ use harness_nav::diagnostics::NavDebugView;
 use harness_nav::status::{nav_state_is_terminal, NavSlots, NavStatus};
 use harness_nav::walker::{Walker, ZoneLine, ZoneLinesError};
 use harness_socket::{AgentClient, ClientError};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 #[cfg(test)]
 use std::sync::mpsc::{Receiver, Sender};
@@ -58,10 +59,22 @@ struct Inner {
     zone_lines: Option<Result<Vec<ZoneLine>, ZoneLinesError>>,
     notices: VecDeque<String>,
     ended: Option<String>,
+    /// Calls waiting for a `Step`, oldest first.
+    calls: VecDeque<Call>,
+    /// Callers waiting for the reply to a call already sent or queued, by call id.
+    waiting: HashMap<u64, tokio::sync::oneshot::Sender<CallReply>>,
+    next_call_id: u64,
 }
 
 /// Most verbs that may wait for a `Step`.
 pub const MAX_QUEUED_VERBS: usize = 16;
+
+/// Most calls that may be sent or queued and not yet answered. eqoxide answers a call past its own
+/// bound (32) `Unavailable`; staying under it here means that never happens.
+pub const MAX_CALLS_IN_FLIGHT: usize = 32;
+
+/// Longest a caller waits for a call's reply before it is given up on.
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Most walker notices kept for `GET /v1/observe/nav`.
 pub const MAX_NOTICES: usize = 32;
@@ -138,6 +151,41 @@ impl Control {
         true
     }
 
+    /// Runs `op` on eqoxide and waits for its reply. A call that gets no reply within
+    /// [`CALL_TIMEOUT`], or whose session ends first, is answered `Unavailable` here: the caller is
+    /// never told a call happened when eqoxide did not say so.
+    pub async fn call(&self, op: String, args: serde_json::Value) -> CallReply {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let id = {
+            let mut inner = self.inner.lock().unwrap();
+            let id = inner.next_call_id;
+            inner.next_call_id += 1;
+            if let Some(why) = &inner.ended {
+                return unavailable(id, format!("the session has ended: {why}"));
+            }
+            if inner.waiting.len() >= MAX_CALLS_IN_FLIGHT {
+                return unavailable(id, "too many calls are waiting for a reply".into());
+            }
+            inner.waiting.insert(id, tx);
+            inner.calls.push_back(Call { id, op, args });
+            id
+        };
+        match tokio::time::timeout(CALL_TIMEOUT, rx).await {
+            Ok(Ok(reply)) => reply,
+            Ok(Err(_)) => unavailable(id, "the session ended before the call was answered".into()),
+            Err(_) => {
+                let mut inner = self.inner.lock().unwrap();
+                inner.waiting.remove(&id);
+                inner.calls.retain(|c| c.id != id);
+                unavailable(
+                    id,
+                    "eqoxide did not answer the call in time; it may or may not have happened"
+                        .into(),
+                )
+            }
+        }
+    }
+
     /// The zone lines of the zone the character is in, or `None` before the first observation.
     pub fn zone_lines(&self) -> Option<Result<Vec<ZoneLine>, ZoneLinesError>> {
         self.inner.lock().unwrap().zone_lines.clone()
@@ -151,8 +199,25 @@ impl Control {
         self.inner.lock().unwrap().latest = Some(obs.clone());
     }
 
+    #[cfg(test)]
+    pub(crate) fn end_for_test(&self, why: &str) {
+        self.end(why.into());
+    }
+
     fn end(&self, why: String) {
-        self.inner.lock().unwrap().ended = Some(why);
+        let mut inner = self.inner.lock().unwrap();
+        inner.ended = Some(why);
+        // Dropping the senders wakes every waiting caller.
+        inner.waiting.clear();
+        inner.calls.clear();
+    }
+}
+
+fn unavailable(id: u64, why: String) -> CallReply {
+    CallReply {
+        id,
+        status: CallStatus::Unavailable,
+        body: serde_json::Value::String(why),
     }
 }
 
@@ -222,8 +287,19 @@ impl Driver {
             inner.verbs.clear();
         }
         inner.latest = Some(obs.clone());
+        for reply in &obs.call_replies {
+            if let Some(waiter) = inner.waiting.remove(&reply.id) {
+                let _ = waiter.send(reply.clone());
+            }
+        }
         let verb = inner.verbs.pop_front();
-        Step { movement, verb }
+        let calls = inner.calls.drain(..).collect();
+        Step {
+            movement,
+            verb,
+            seq: None,
+            calls,
+        }
     }
 
     /// Loads the collision of the zone `obs` is in. A zone that fails to load is not recorded as

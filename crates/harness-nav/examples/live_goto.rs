@@ -37,6 +37,8 @@ fn finish(client: &mut AgentClient, code: i32) -> ! {
     let _ = client.send_step(&Step {
         movement: Some(stop),
         verb: None,
+        seq: None,
+        calls: vec![],
     });
     std::process::exit(code);
 }
@@ -50,6 +52,8 @@ fn step(client: &mut AgentClient, walker: &mut Walker, obs: &Observation) {
         .send_step(&Step {
             movement,
             verb: None,
+            seq: None,
+            calls: vec![],
         })
         .expect("send step");
 }

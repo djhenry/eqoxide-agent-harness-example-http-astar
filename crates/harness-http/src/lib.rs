@@ -3,9 +3,11 @@
 //!
 //! It serves the agent control routes eqoxide's own HTTP API used to carry: movement, navigation,
 //! combat and interact verbs, and the observations that go with them. Routes queue intent for the
-//! [`driver`], the only code that touches the socket. See docs/scope.md for what is not served.
+//! [`driver`], the only code that touches the socket. Every other `/v1/...` route is forwarded to
+//! eqoxide as a call over the same socket. See docs/scope.md.
 
 pub mod driver;
+mod proxy;
 mod routes;
 
 use axum::routing::get;
@@ -23,10 +25,12 @@ async fn health() -> Json<Health> {
     })
 }
 
-/// The control routes and `GET /health`, answering from `control`.
+/// The control routes and `GET /health`, answering from `control`. Any other `/v1/...` request is
+/// forwarded to eqoxide as a call (see `proxy`).
 pub fn router(control: std::sync::Arc<driver::Control>) -> Router {
     routes::router()
         .route("/health", get(health))
+        .fallback(proxy::forward)
         .with_state(control)
 }
 

@@ -25,6 +25,7 @@ This repo bootstraps the reference agent harness described in eqoxide's
     `zone_lines` (each zone line's index and a standable point). There is no cross route: walk to a
     line with `goto` and eqoxide fires the crossing itself.
   - `GET /health`
+  - everything else under `/v1/`: forwarded to eqoxide as a call (see below)
 - **`crates/harness-combat/examples/chase_nearest_npc.rs`**: a worked, buildable example
   combining `harness-socket` and `harness-combat` the way a real caller would: connect, watch for
   the nearest visible living NPC, chase and face it. Needs a live eqoxide instance to actually run
@@ -35,13 +36,17 @@ This repo bootstraps the reference agent harness described in eqoxide's
 - **Full A* planner/walker/steering port** into `harness-nav`, from eqoxide's
   `crates/eqoxide-nav/src/{planner,walker,steering,traversability}.rs` (~19,000 lines combined in
   the eqoxide repo today). A separate, dedicated plan covers this port.
-- **The rest of eqoxide's HTTP surface** (`merchant`, `inventory`, `quests`, `chat`, `group`,
-  `guild`, `pet`, `trainer`, `social`, `camera`, the `events` feed, and the rendered-frame and
-  packet observe routes). The Agent Plugin API carries no verb or observation for them yet:
-  `AgentVerb`'s `Merchant`, `Inventory`, `Quests` and `Chat` groups are empty enums, and
-  `Observation` has no door, zone-point or message data. Each route group returns to this repo
-  as the protocol grows its verb. Two routes differ from eqoxide's: `zone_cross` is gone, because crossing is passive, and `manual`
-  cancels any nav goal instead of yielding to keyboard input.
+- **Serving the rest of eqoxide's HTTP surface natively.** Every other `/v1/...` route
+  (`merchant`, `inventory`, `quests`, `chat`, `group`, `guild`, `pet`, `trainer`, `social`, the
+  `events` feed, and the remaining `observe` routes) is forwarded to eqoxide as a `Call` over the
+  agent socket (protocol v4) and answered with eqoxide's reply: the call's `op` is
+  `"<METHOD> <path>"`, its `args` carry `query` and `body`, and the `CallStatus` becomes the HTTP
+  status (`Ok` 200, `Accepted` 202, `Invalid` 400, `NotFound` 404, `Conflict` 409, `Unavailable`
+  503, `Failed` 500). A call eqoxide does not answer within 30 seconds is answered 503, saying it
+  may or may not have happened. These routes move into this repo's own handlers as eqoxide
+  rewrites each group without HTTP. The `camera` routes and the rendered-frame observe route are
+  not carried. Two routes differ from eqoxide's: `zone_cross` is gone, because crossing is
+  passive, and `manual` cancels any nav goal instead of yielding to keyboard input.
 - **A checked-in test `.glb` fixture** for `harness-nav`'s `load_zone` itself. Today `load_zone`'s
   own test only checks the not-found-path error case. Eqoxide's `test_ready()` fixture covers the
   "does it actually build a real `Collision`" case indirectly, bypassing `from_glb` entirely.
