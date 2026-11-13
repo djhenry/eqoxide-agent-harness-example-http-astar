@@ -70,9 +70,9 @@
 //! [`Body::agent_height`]. That is consistent, not a lie — the planner never PROMISES a pose the
 //! controller then rejects.
 
-use eqoxide_zone_geometry::collision::{ClearanceField, Collision};
 #[cfg(test)]
 use crate::collision::CollisionAStar;
+use eqoxide_zone_geometry::collision::{ClearanceField, Collision};
 
 /// The character's collision volume — moved to [`eqoxide_zone_geometry::body`] because
 /// `Collision::build_water_grid`'s lazy cache needs [`PLAYER_BODY`] to build a grid, and that
@@ -127,9 +127,13 @@ pub struct Point {
 
 impl Point {
     #[inline]
-    pub fn new(xy: [f32; 2], floor_z: f32) -> Self { Point { xy, floor_z } }
+    pub fn new(xy: [f32; 2], floor_z: f32) -> Self {
+        Point { xy, floor_z }
+    }
     #[inline]
-    pub fn pos3(&self) -> [f32; 3] { [self.xy[0], self.xy[1], self.floor_z] }
+    pub fn pos3(&self) -> [f32; 3] {
+        [self.xy[0], self.xy[1], self.floor_z]
+    }
 }
 
 /// What refused a position or a segment.
@@ -227,8 +231,22 @@ pub struct Traversability<'a> {
 }
 
 impl<'a> Traversability<'a> {
-    pub fn new(col: &'a Collision, radius: f32, cell: f32, ledge_margin: f32, floating: bool) -> Self {
-        Traversability { col, clearance: ClearanceField::default(), body: &PLAYER_BODY, radius, cell, ledge_margin, floating }
+    pub fn new(
+        col: &'a Collision,
+        radius: f32,
+        cell: f32,
+        ledge_margin: f32,
+        floating: bool,
+    ) -> Self {
+        Traversability {
+            col,
+            clearance: ClearanceField::default(),
+            body: &PLAYER_BODY,
+            radius,
+            cell,
+            ledge_margin,
+            floating,
+        }
     }
 
     // ── HOT: what A* calls, per edge / per waypoint. No Result, no Option, no allocation. ──
@@ -252,12 +270,14 @@ impl<'a> Traversability<'a> {
         self.col.edge_clear(
             [a.xy[0], a.xy[1], a.floor_z + chest],
             [b.xy[0], b.xy[1], b.floor_z + chest],
-            self.radius, self.cell)
-            && self.col.edge_clear(
-                [a.xy[0], a.xy[1], a.floor_z + feet],
-                [b.xy[0], b.xy[1], b.floor_z + feet],
-                self.radius, self.cell)
-            && self.occupy_margin_ok(b)
+            self.radius,
+            self.cell,
+        ) && self.col.edge_clear(
+            [a.xy[0], a.xy[1], a.floor_z + feet],
+            [b.xy[0], b.xy[1], b.floor_z + feet],
+            self.radius,
+            self.cell,
+        ) && self.occupy_margin_ok(b)
     }
 
     /// The walk-edge clearance test forced to the SWEPT body volume — used to validate a STEEP DROP
@@ -278,10 +298,13 @@ impl<'a> Traversability<'a> {
         let [feet, chest] = self.body.planner_probes();
         self.col.path_clear(
             [a.xy[0], a.xy[1], a.floor_z + chest],
-            [b.xy[0], b.xy[1], b.floor_z + chest], self.radius)
-            && self.col.path_clear(
-                [a.xy[0], a.xy[1], a.floor_z + feet],
-                [b.xy[0], b.xy[1], b.floor_z + feet], self.radius)
+            [b.xy[0], b.xy[1], b.floor_z + chest],
+            self.radius,
+        ) && self.col.path_clear(
+            [a.xy[0], a.xy[1], a.floor_z + feet],
+            [b.xy[0], b.xy[1], b.floor_z + feet],
+            self.radius,
+        )
     }
 
     // ── COLD: the diagnostic forms. Run on FAILED plans (and in tests), never in the inner loop. ──
@@ -292,13 +315,22 @@ impl<'a> Traversability<'a> {
     pub fn can_occupy(&self, p: Point) -> Result<(), BlockedBy> {
         note_diagnose();
         if !self.occupy_floor_ok(p) {
-            return Err(Blockage { hazard: self.ground_hazard(p.xy, p.floor_z), at: p.pos3() });
+            return Err(Blockage {
+                hazard: self.ground_hazard(p.xy, p.floor_z),
+                at: p.pos3(),
+            });
         }
         if !self.occupy_wall_ok(p) {
-            return Err(Blockage { hazard: HazardKind::Wall, at: p.pos3() });
+            return Err(Blockage {
+                hazard: HazardKind::Wall,
+                at: p.pos3(),
+            });
         }
         if !self.occupy_margin_ok(p) {
-            return Err(Blockage { hazard: self.margin_hazard(p), at: p.pos3() });
+            return Err(Blockage {
+                hazard: self.margin_hazard(p),
+                at: p.pos3(),
+            });
         }
         Ok(())
     }
@@ -315,17 +347,29 @@ impl<'a> Traversability<'a> {
             let to = [b.xy[0], b.xy[1], b.floor_z + hz];
             if !self.col.edge_clear(from, to, self.radius, self.cell) {
                 let at = match self.col.nearest_hit_t(from, to) {
-                    Some(t) => [from[0] + (to[0] - from[0]) * t,
-                                from[1] + (to[1] - from[1]) * t,
-                                from[2] + (to[2] - from[2]) * t],
+                    Some(t) => [
+                        from[0] + (to[0] - from[0]) * t,
+                        from[1] + (to[1] - from[1]) * t,
+                        from[2] + (to[2] - from[2]) * t,
+                    ],
                     // A feeler (not the centre ray) hit: report the midpoint of the swept band.
-                    None => [(from[0] + to[0]) * 0.5, (from[1] + to[1]) * 0.5, (from[2] + to[2]) * 0.5],
+                    None => [
+                        (from[0] + to[0]) * 0.5,
+                        (from[1] + to[1]) * 0.5,
+                        (from[2] + to[2]) * 0.5,
+                    ],
                 };
-                return Err(Blockage { hazard: HazardKind::Wall, at });
+                return Err(Blockage {
+                    hazard: HazardKind::Wall,
+                    at,
+                });
             }
         }
         if !self.occupy_margin_ok(b) {
-            return Err(Blockage { hazard: self.margin_hazard(b), at: b.pos3() });
+            return Err(Blockage {
+                hazard: self.margin_hazard(b),
+                at: b.pos3(),
+            });
         }
         Ok(())
     }
@@ -349,7 +393,8 @@ impl<'a> Traversability<'a> {
     /// The body's footprint ring is clear of walls at the plan's radius.
     #[inline]
     fn occupy_wall_ok(&self, p: Point) -> bool {
-        self.col.footprint_clear(p.xy[0], p.xy[1], p.floor_z, self.radius, 8)
+        self.col
+            .footprint_clear(p.xy[0], p.xy[1], p.floor_z, self.radius, 8)
     }
 
     /// STANDING ROOM (the tiered promise above `Tier::Minimum`): `ledge_margin` of GROUND all
@@ -377,8 +422,13 @@ impl<'a> Traversability<'a> {
         // needle geometry real zone art does not contain — and it shares this plan's own `clearance`
         // field the hug COST relies on (its load-bearing use). Kept for that belt, not because it
         // adds tier behaviour the footprint lacks.
-        self.clearance.ground_at(self.col, p.xy[0], p.xy[1], p.floor_z) >= self.ledge_margin
-            && self.clearance.wall_at(self.col, p.xy[0], p.xy[1], p.floor_z) >= self.radius
+        self.clearance
+            .ground_at(self.col, p.xy[0], p.xy[1], p.floor_z)
+            >= self.ledge_margin
+            && self
+                .clearance
+                .wall_at(self.col, p.xy[0], p.xy[1], p.floor_z)
+                >= self.radius
     }
 
     /// Cold-path only: name the ground hazard at a spot with no usable floor — open water reads
@@ -399,7 +449,9 @@ impl<'a> Traversability<'a> {
             let m = self.ledge_margin;
             for (dx, dy) in [(m, 0.0), (-m, 0.0), (0.0, m), (0.0, -m)] {
                 let (x, y) = (p.xy[0] + dx, p.xy[1] + dy);
-                let ok = self.col.nearest_floor(x, y, p.floor_z, 3.0, 8.0)
+                let ok = self
+                    .col
+                    .nearest_floor(x, y, p.floor_z, 3.0, 8.0)
                     .is_some_and(|f| (f - p.floor_z).abs() <= 8.0);
                 if !ok {
                     return self.ground_hazard([x, y], p.floor_z);
@@ -415,8 +467,8 @@ impl<'a> Traversability<'a> {
 mod tests {
     use super::*;
     use eqoxide_assets::{MeshData, RenderMode, ZoneAssets};
-    use eqoxide_zone_geometry::collision::Collision;
     use eqoxide_core::physics::PLAYER_RADIUS;
+    use eqoxide_zone_geometry::collision::Collision;
 
     fn mesh(positions: Vec<[f32; 3]>) -> MeshData {
         MeshData {
@@ -440,7 +492,14 @@ mod tests {
         mesh(vec![[n0, h0, e], [n1, h0, e], [n1, h1, e], [n0, h1, e]])
     }
     fn col(meshes: Vec<MeshData>) -> Collision {
-        Collision::build(&ZoneAssets { terrain: meshes, objects: vec![], textures: vec![] }, 32.0)
+        Collision::build(
+            &ZoneAssets {
+                terrain: meshes,
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        )
     }
 
     /// The planner's probe heights and the controller's contact heights come from ONE body, and the
@@ -459,7 +518,10 @@ mod tests {
         let planner = PLAYER_BODY.planner_probes();
         let contact = PLAYER_BODY.contact_probes();
         // CHEST axis (#386): the planner's top probe IS the controller's chest contact ray.
-        assert_eq!(planner[1], contact[1], "the top probe must be shared (the #386 axis)");
+        assert_eq!(
+            planner[1], contact[1],
+            "the top probe must be shared (the #386 axis)"
+        );
         // FOOT axis (#420): the planner's low probe is the controller's foot contact ray lifted by
         // the controller's own step-up reach — DERIVED, not a coincident literal. This is the exact
         // height of the controller's raised step-slide contact ray, so a low obstacle taller than it
@@ -468,18 +530,27 @@ mod tests {
         // `tests/walker_sim.rs::planner_never_routes_over_a_low_wall_the_walker_cant_step` — NOT by
         // anything below in this file (#742: that read "`..._low_wall_...` below", which #567 made
         // false when it moved the test out; the fixture it left behind here was dead and is gone).
-        assert_eq!(PLAYER_BODY.step_up, eqoxide_core::physics::STEP_UP,
-            "the body's step-up must be the controller's real step-up capability");
-        assert_eq!(planner[0], contact[0] + PLAYER_BODY.step_up,
-            "the planner's low probe must be foot + step_up (the #420 foot-axis binding)");
+        assert_eq!(
+            PLAYER_BODY.step_up,
+            eqoxide_core::physics::STEP_UP,
+            "the body's step-up must be the controller's real step-up capability"
+        );
+        assert_eq!(
+            planner[0],
+            contact[0] + PLAYER_BODY.step_up,
+            "the planner's low probe must be foot + step_up (the #420 foot-axis binding)"
+        );
         assert_eq!(planner[0], PLAYER_BODY.feet_clr());
         // ...and it must still clear the step-up band, or every mountable stair reads as a wall
         // (the over-rejection direction: a body too fat also lies).
-        assert!(planner[0] > eqoxide_core::physics::STEP_UP,
-            "the planner's low probe must clear the step-up band, or every stair reads as a wall");
-        const { assert!(PLAYER_BODY.radius >= eqoxide_core::physics::PLAYER_RADIUS); }
+        assert!(
+            planner[0] > eqoxide_core::physics::STEP_UP,
+            "the planner's low probe must clear the step-up band, or every stair reads as a wall"
+        );
+        const {
+            assert!(PLAYER_BODY.radius >= eqoxide_core::physics::PLAYER_RADIUS);
+        }
     }
-
 
     /// **THE FIELD IS DETERMINISTIC AND HISTORY-BLIND (the #394 discipline).** A memoised value is
     /// a pure function of its key: two queries anywhere inside one 2 u key cell get the identical
@@ -494,21 +565,34 @@ mod tests {
         // Two distinct points in the same 2u key cell (keys floor(x/2): 4.1 and 5.3 both → 2).
         let a = c.wall_clearance(4.1, 0.2, 0.0);
         let b = c.wall_clearance(5.3, 1.7, 0.0);
-        assert_eq!(a, b, "same key cell must give the identical (key-centre) answer");
+        assert_eq!(
+            a, b,
+            "same key cell must give the identical (key-centre) answer"
+        );
         // Warm-vs-cold: a fresh Collision over the same geometry, queried in a different order.
         let c2 = col(vec![
             floor_at(0.0, -30.0, 30.0, -30.0, 30.0),
             panel(10.0, -30.0, 30.0, 0.0, 10.0),
         ]);
         let _ = c2.wall_clearance(-20.0, -20.0, 0.0); // unrelated first query
-        assert_eq!(c2.wall_clearance(5.3, 1.7, 0.0), a, "history must not change the answer");
+        assert_eq!(
+            c2.wall_clearance(5.3, 1.7, 0.0),
+            a,
+            "history must not change the answer"
+        );
         // And the value is sane: the key centre (5,1) is 5u from the wall at east=10, but capped
         // sampling quantises — just require it sees the wall inside the cap and not through it.
-        assert!(a > 3.0 && a <= 5.5, "wall at east=10 from key-centre ~(5,1): {a}");
+        assert!(
+            a > 3.0 && a <= 5.5,
+            "wall at east=10 from key-centre ~(5,1): {a}"
+        );
         let g = c.ground_clearance(0.0, 0.0, 0.0);
         assert!(g >= 2.0, "mid-plateau has full ground clearance: {g}");
         let edge = c.ground_clearance(-29.5, 0.0, 0.0);
-        assert!(edge < 2.0, "the plateau lip has reduced ground clearance: {edge}");
+        assert!(
+            edge < 2.0,
+            "the plateau lip has reduced ground clearance: {edge}"
+        );
     }
 
     /// **THE MEMO IS BOUNDED, AND THE BOUND DEGRADES SPEED, NEVER TRUTH.** At capacity the field
@@ -517,13 +601,23 @@ mod tests {
     fn clearance_field_capacity_degrades_not_grows_or_lies() {
         let c = col(vec![floor_at(0.0, -60.0, 60.0, -60.0, 60.0)]);
         // Record truth uncapped.
-        let pts: Vec<(f32, f32)> = (0..40).map(|i| (-58.0 + 3.0 * i as f32, 2.0 * i as f32 - 40.0)).collect();
-        let truth: Vec<f32> = pts.iter().map(|&(x, y)| c.wall_clearance(x, y, 0.0)).collect();
+        let pts: Vec<(f32, f32)> = (0..40)
+            .map(|i| (-58.0 + 3.0 * i as f32, 2.0 * i as f32 - 40.0))
+            .collect();
+        let truth: Vec<f32> = pts
+            .iter()
+            .map(|&(x, y)| c.wall_clearance(x, y, 0.0))
+            .collect();
         // A fresh, tightly-capped field over the same geometry.
         let c2 = col(vec![floor_at(0.0, -60.0, 60.0, -60.0, 60.0)]);
         c2.clearance_field_for_test().set_cap_for_test(8);
         for (i, &(x, y)) in pts.iter().enumerate() {
-            assert_eq!(c2.wall_clearance(x, y, 0.0), truth[i], "capped field lied at {:?}", (x, y));
+            assert_eq!(
+                c2.wall_clearance(x, y, 0.0),
+                truth[i],
+                "capped field lied at {:?}",
+                (x, y)
+            );
         }
         // Repeat pass: still correct (whether served from the 8 kept entries or recomputed).
         for (i, &(x, y)) in pts.iter().enumerate() {
@@ -549,7 +643,14 @@ mod tests {
     #[test]
     fn fine_plan_swings_off_the_hugged_wall_when_a_freer_lane_exists() {
         // Walls run EAST-WEST (north = -2.5 and +4.5), corridor open east [-30, 30].
-        let wall_ns = |n: f32| mesh(vec![[n, 0.0, -30.0], [n, 8.0, -30.0], [n, 8.0, 30.0], [n, 0.0, 30.0]]);
+        let wall_ns = |n: f32| {
+            mesh(vec![
+                [n, 0.0, -30.0],
+                [n, 8.0, -30.0],
+                [n, 8.0, 30.0],
+                [n, 0.0, 30.0],
+            ])
+        };
         let c = col(vec![
             floor_at(0.0, -30.0, 30.0, -12.0, 12.0),
             wall_ns(-2.5),
@@ -558,14 +659,22 @@ mod tests {
         // Start and carrot both in the near-wall lane (1.5 u off the south wall).
         let out = c.find_path_local([-16.0, -1.0, 0.0], [16.0, -1.0, 0.0], 2.0, 40.0, 4.0);
         let steer = out.steer();
-        assert!(steer.len() >= 3, "the corridor must still be threaded: {out:?}");
+        assert!(
+            steer.len() >= 3,
+            "the corridor must still be threaded: {out:?}"
+        );
         // Mid-route (away from the endpoints, which are pinned to the ask), the lane must have
         // pulled off the south wall toward the roomy side.
         let mid: Vec<_> = steer.iter().filter(|w| w[0] > -8.0 && w[0] < 8.0).collect();
-        assert!(!mid.is_empty(), "route must cross the corridor middle: {steer:?}");
+        assert!(
+            !mid.is_empty(),
+            "route must cross the corridor middle: {steer:?}"
+        );
         let worst = mid.iter().map(|w| w[1] + 2.5).fold(f32::MAX, f32::min); // distance from south wall
-        assert!(worst > 2.0,
-            "mid-route lane still hugs the south wall (nearest approach {worst:.2}u): {steer:?}");
+        assert!(
+            worst > 2.0,
+            "mid-route lane still hugs the south wall (nearest approach {worst:.2}u): {steer:?}"
+        );
     }
 
     /// **THE GRADED STANDING-ROOM MARGIN (the new `occupy_margin_ok` path, #378 field wiring).**
@@ -599,24 +708,42 @@ mod tests {
 
         // The graded field genuinely sees the edge as reduced ground clearance here, and full
         // clearance mid-plateau — that is the boolean→graded swap this test exists to pin.
-        assert!(c.ground_clearance(0.0, 38.5, 0.0) < Tier::Preferred.units(),
-            "near the edge, graded ground clearance must be below the preferred margin");
-        assert!(c.ground_clearance(0.0, 0.0, 0.0) >= Tier::Preferred.units(),
-            "mid-plateau must have full graded ground clearance");
+        assert!(
+            c.ground_clearance(0.0, 38.5, 0.0) < Tier::Preferred.units(),
+            "near the edge, graded ground clearance must be below the preferred margin"
+        );
+        assert!(
+            c.ground_clearance(0.0, 0.0, 0.0) >= Tier::Preferred.units(),
+            "mid-plateau must have full graded ground clearance"
+        );
 
-        let pref = Traversability::new(&c, Tier::Preferred.units(), 2.0, Tier::Preferred.units(), false);
+        let pref = Traversability::new(
+            &c,
+            Tier::Preferred.units(),
+            2.0,
+            Tier::Preferred.units(),
+            false,
+        );
         let minm = Traversability::new(&c, Tier::Minimum.units(), 2.0, 0.0, false);
 
         // Preferred: the near-edge point lacks standing room and is refused, naming the ground.
-        assert!(pref.can_occupy_fast(mid), "mid-plateau is occupiable at the preferred tier");
+        assert!(
+            pref.can_occupy_fast(mid),
+            "mid-plateau is occupiable at the preferred tier"
+        );
         match pref.can_occupy(near_edge) {
-            Err(b) => assert_eq!(b.hazard, HazardKind::Floor,
-                "a point short of the preferred ground margin names Floor: {b:?}"),
+            Err(b) => assert_eq!(
+                b.hazard,
+                HazardKind::Floor,
+                "a point short of the preferred ground margin names Floor: {b:?}"
+            ),
             Ok(()) => panic!("near the edge must be refused at the preferred tier (standing room)"),
         }
         // Minimum: the SAME point fits (no standing-room requirement) — the tiered distinction.
-        assert!(minm.can_occupy_fast(near_edge),
-            "the near-edge point must remain occupiable at the minimum tier (it fits)");
+        assert!(
+            minm.can_occupy_fast(near_edge),
+            "the near-edge point must remain occupiable at the minimum tier (it fits)"
+        );
         assert!(minm.can_occupy(near_edge).is_ok());
 
         // WALL STANDING-ROOM, tiered. A point 1u from a wall on continuous floor: the field sees
@@ -630,14 +757,26 @@ mod tests {
         ]);
         // 1.2u from the wall (east=6.8): fits at radius 1.0 (Minimum), not at radius 2.0 (Preferred).
         let near_wall = Point::new([6.8, 0.0], 0.0);
-        assert!(cw.wall_clearance(6.8, 0.0, 0.0) < Tier::Preferred.units(),
-            "~1u from the wall, graded wall clearance is below the preferred radius");
-        let prefw = Traversability::new(&cw, Tier::Preferred.units(), 2.0, Tier::Preferred.units(), false);
+        assert!(
+            cw.wall_clearance(6.8, 0.0, 0.0) < Tier::Preferred.units(),
+            "~1u from the wall, graded wall clearance is below the preferred radius"
+        );
+        let prefw = Traversability::new(
+            &cw,
+            Tier::Preferred.units(),
+            2.0,
+            Tier::Preferred.units(),
+            false,
+        );
         let minw = Traversability::new(&cw, Tier::Minimum.units(), 2.0, 0.0, false);
-        assert!(prefw.can_occupy(near_wall).is_err(),
-            "a point inside the preferred wall standing-room must be refused at Preferred");
-        assert!(minw.can_occupy_fast(near_wall),
-            "the same point fits at the minimum tier (radius 1.0)");
+        assert!(
+            prefw.can_occupy(near_wall).is_err(),
+            "a point inside the preferred wall standing-room must be refused at Preferred"
+        );
+        assert!(
+            minw.can_occupy_fast(near_wall),
+            "the same point fits at the minimum tier (radius 1.0)"
+        );
     }
 
     /// Tier is the ladder and the ladder is closed: two rungs, minimum == the controller's radius,
@@ -662,26 +801,42 @@ mod tests {
             floor_at(0.0, -30.0, 20.0, -60.0, 30.0),
             panel(-10.0, -30.0, 0.0, 0.0, 10.0),
         ]);
-        c.set_water(Some(std::sync::Arc::new(eqoxide_core::region_map::RegionMap::flat_below(-5.0))));
+        c.set_water(Some(std::sync::Arc::new(
+            eqoxide_core::region_map::RegionMap::flat_below(-5.0),
+        )));
 
         let mut seed: u64 = 0xB0D1_C0DE;
         let mut rnd = || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as u32 as f32 / u32::MAX as f32
         };
         let mut checked = 0usize;
         for tier in Tier::LADDER {
-            let ledge = if tier == Tier::Preferred { tier.units() } else { 0.0 };
+            let ledge = if tier == Tier::Preferred {
+                tier.units()
+            } else {
+                0.0
+            };
             for cell in [2.0f32, 8.0] {
                 let t = Traversability::new(&c, tier.units(), cell, ledge, false);
                 for _ in 0..200 {
                     let a = Point::new([rnd() * 70.0 - 35.0, rnd() * 100.0 - 65.0], 0.0);
                     let b = Point::new(
-                        [a.xy[0] + rnd() * 16.0 - 8.0, a.xy[1] + rnd() * 16.0 - 8.0], 0.0);
-                    assert_eq!(t.can_occupy_fast(a), t.can_occupy(a).is_ok(),
-                        "occupy fast/cold disagreement at {a:?} tier {tier:?}");
-                    assert_eq!(t.can_traverse_fast(a, b), t.can_traverse(a, b).is_ok(),
-                        "traverse fast/cold disagreement {a:?} -> {b:?} tier {tier:?}");
+                        [a.xy[0] + rnd() * 16.0 - 8.0, a.xy[1] + rnd() * 16.0 - 8.0],
+                        0.0,
+                    );
+                    assert_eq!(
+                        t.can_occupy_fast(a),
+                        t.can_occupy(a).is_ok(),
+                        "occupy fast/cold disagreement at {a:?} tier {tier:?}"
+                    );
+                    assert_eq!(
+                        t.can_traverse_fast(a, b),
+                        t.can_traverse(a, b).is_ok(),
+                        "traverse fast/cold disagreement {a:?} -> {b:?} tier {tier:?}"
+                    );
                     checked += 2;
                 }
             }
@@ -697,7 +852,9 @@ mod tests {
             floor_at(0.0, -30.0, 20.0, -60.0, 30.0),
             panel(-10.0, -30.0, 0.0, 0.0, 10.0),
         ]);
-        c.set_water(Some(std::sync::Arc::new(eqoxide_core::region_map::RegionMap::flat_below(-5.0))));
+        c.set_water(Some(std::sync::Arc::new(
+            eqoxide_core::region_map::RegionMap::flat_below(-5.0),
+        )));
 
         // Wall: traversing east through the panel at east=-10.
         let t = Traversability::new(&c, PLAYER_RADIUS, 2.0, 0.0, false);
@@ -705,7 +862,11 @@ mod tests {
         let b = Point::new([-6.0, -10.0], 0.0);
         let e = t.can_traverse(a, b).unwrap_err();
         assert_eq!(e.hazard, HazardKind::Wall);
-        assert!((e.at[0] - (-10.0)).abs() < 1.5, "blockage should be at the panel: {:?}", e.at);
+        assert!(
+            (e.at[0] - (-10.0)).abs() < 1.5,
+            "blockage should be at the panel: {:?}",
+            e.at
+        );
 
         // Floor: standing out past the plateau edge (east > 20, dry land side).
         let off = Point::new([28.0, 10.0], 0.0);
@@ -713,11 +874,19 @@ mod tests {
         assert_eq!(e.hazard, HazardKind::Floor);
 
         // Water: a preferred-tier margin probe reaching over the waterline names Water.
-        let tp = Traversability::new(&c, Tier::Preferred.units(), 8.0, Tier::Preferred.units(), false);
+        let tp = Traversability::new(
+            &c,
+            Tier::Preferred.units(),
+            8.0,
+            Tier::Preferred.units(),
+            false,
+        );
         let shore = Point::new([0.0, -59.5], 0.0);
         match tp.can_occupy(shore) {
-            Err(e) => assert!(matches!(e.hazard, HazardKind::Water | HazardKind::Floor),
-                "shore refusal names a ground hazard: {e:?}"),
+            Err(e) => assert!(
+                matches!(e.hazard, HazardKind::Water | HazardKind::Floor),
+                "shore refusal names a ground hazard: {e:?}"
+            ),
             Ok(()) => panic!("a point with water/void within the preferred margin must be refused"),
         }
     }
@@ -740,13 +909,18 @@ mod tests {
             // FNV-1a over the exact f32 bit patterns; Option-ness folded in.
             const P: u64 = 0x100000001b3;
             match r {
-                None => { *h ^= 0xdead; *h = h.wrapping_mul(P); }
-                Some(ws) => for w in ws {
-                    for c in w {
-                        *h ^= c.to_bits() as u64;
-                        *h = h.wrapping_mul(P);
+                None => {
+                    *h ^= 0xdead;
+                    *h = h.wrapping_mul(P);
+                }
+                Some(ws) => {
+                    for w in ws {
+                        for c in w {
+                            *h ^= c.to_bits() as u64;
+                            *h = h.wrapping_mul(P);
+                        }
                     }
-                },
+                }
             }
         }
         // Fixture A: open plateau with real edges (generous tier's ledge margin is live near them).
@@ -765,16 +939,40 @@ mod tests {
 
         let mut h: u64 = 0xcbf29ce484222325;
         for (c, pairs) in [
-            (&plateau, [([-30.0, 0.0, 0.0], [30.0, 0.0, 0.0]), ([-30.0, -35.0, 0.0], [30.0, 35.0, 0.0])]),
-            (&corridor, [([-20.0, 0.0, 0.0], [20.0, 0.0, 0.0]), ([-20.0, -10.0, 0.0], [20.0, 10.0, 0.0])]),
-            (&bend, [([-40.0, 0.0, 0.0], [40.0, 0.0, 0.0]), ([-40.0, -50.0, 0.0], [40.0, 60.0, 0.0])]),
+            (
+                &plateau,
+                [
+                    ([-30.0, 0.0, 0.0], [30.0, 0.0, 0.0]),
+                    ([-30.0, -35.0, 0.0], [30.0, 35.0, 0.0]),
+                ],
+            ),
+            (
+                &corridor,
+                [
+                    ([-20.0, 0.0, 0.0], [20.0, 0.0, 0.0]),
+                    ([-20.0, -10.0, 0.0], [20.0, 10.0, 0.0]),
+                ],
+            ),
+            (
+                &bend,
+                [
+                    ([-40.0, 0.0, 0.0], [40.0, 0.0, 0.0]),
+                    ([-40.0, -50.0, 0.0], [40.0, 60.0, 0.0]),
+                ],
+            ),
         ] {
             for (s, g) in pairs {
                 hash_route(&mut h, c.find_path(s, g, PLAYER_RADIUS, &[], false));
-                hash_route(&mut h, Some(c.find_path_local(s, g, 2.0, 40.0, 4.0).steer().to_vec()));
+                hash_route(
+                    &mut h,
+                    Some(c.find_path_local(s, g, 2.0, 40.0, 4.0).steer().to_vec()),
+                );
             }
         }
-        assert_eq!(h, 0xb1e7db81be9e74ad_u64, "route parity broken: waypoints moved (new hash {h:#x})");
+        assert_eq!(
+            h, 0xb1e7db81be9e74ad_u64,
+            "route parity broken: waypoints moved (new hash {h:#x})"
+        );
     }
 
     /// **ZERO DIAGNOSIS ON SUCCESS (design §5c #2).** A successful plan must never pay for a
@@ -785,9 +983,20 @@ mod tests {
     fn a_successful_plan_never_runs_the_cold_path() {
         let c = col(vec![floor_at(0.0, -60.0, 60.0, -60.0, 60.0)]);
         let before = DIAGNOSE_CALLS.with(|c| c.get());
-        let route = c.find_path([-30.0, 0.0, 0.0], [30.0, 0.0, 0.0], PLAYER_RADIUS, &[], false);
+        let route = c.find_path(
+            [-30.0, 0.0, 0.0],
+            [30.0, 0.0, 0.0],
+            PLAYER_RADIUS,
+            &[],
+            false,
+        );
         assert!(route.is_some(), "open floor must route");
         let after = DIAGNOSE_CALLS.with(|c| c.get());
-        assert_eq!(before, after, "a successful plan ran the cold diagnose path {} times", after - before);
+        assert_eq!(
+            before,
+            after,
+            "a successful plan ran the cold diagnose path {} times",
+            after - before
+        );
     }
 }

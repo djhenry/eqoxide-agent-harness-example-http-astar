@@ -13,10 +13,16 @@ path = "src/lib.rs"
 
 [dependencies]
 harness-socket = { path = "../harness-socket" }
+harness-nav = { path = "../harness-nav" }
+harness-combat = { path = "../harness-combat" }
+# Every git dependency on this URL shares one rev (see docs/scope.md, "Bumping the eqoxide pin").
+eqoxide-agent-protocol = { git = "https://github.com/djhenry/eqoxide.git", rev = "67c08c63cb69607bbac99c519b51c1b18ac4176e" }
+eqoxide-zone-geometry = { git = "https://github.com/djhenry/eqoxide.git", rev = "67c08c63cb69607bbac99c519b51c1b18ac4176e" }
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tracing = "0.1"
 
 [dev-dependencies]
 # "util" gates tower::ServiceExt (the oneshot() call harness-http's health-check test uses below) —

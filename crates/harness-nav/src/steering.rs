@@ -4,9 +4,9 @@
 //! not live inside net). The `ActionLoop` god-struct and its `tick()`/`sync_*`/`apply_*plan`
 //! methods (the net action loop) are a later step and still live in `eq_net::action_loop`.
 
-use eqoxide_core::coord::eq_heading;
 #[cfg(test)]
 use crate::collision::CollisionAStar;
+use eqoxide_core::coord::eq_heading;
 
 // NOTE: `slide_move` — a second, divergent collision-slide implementation (chest ray at z+3, its
 // own axis-drop logic) — was DELETED in Phase 2 (#378). It had ZERO production callers: the walker
@@ -116,7 +116,10 @@ pub enum CommittedRoute {
 impl CommittedRoute {
     /// The agent-facing word for this route's completeness, used in the `nav_stall` payload.
     pub fn as_str(self) -> &'static str {
-        match self { CommittedRoute::Complete => "complete", CommittedRoute::Partial => "partial" }
+        match self {
+            CommittedRoute::Complete => "complete",
+            CommittedRoute::Partial => "partial",
+        }
     }
 }
 
@@ -164,7 +167,9 @@ pub enum RouteExecution {
 impl RouteExecution {
     /// The verdict a freshly-aimed goal starts from. Not `Default`, deliberately: this is the state
     /// of a goal that has just been accepted, and it should be named at the sites that mean that.
-    pub const fn fresh() -> Self { RouteExecution::Advancing { quiet_ticks: 0 } }
+    pub const fn fresh() -> Self {
+        RouteExecution::Advancing { quiet_ticks: 0 }
+    }
 
     /// Consecutive ticks since the walker last made progress (either channel).
     pub fn quiet_ticks(self) -> u32 {
@@ -175,7 +180,9 @@ impl RouteExecution {
     }
 
     /// Has the body stopped executing the committed route?
-    pub fn is_stalled(self) -> bool { matches!(self, RouteExecution::Stalled { .. }) }
+    pub fn is_stalled(self) -> bool {
+        matches!(self, RouteExecution::Stalled { .. })
+    }
 
     /// One nav tick (~150 ms). `progressed` is the walker's TWO-CHANNEL progress signal — the same
     /// one #631 already computes every tick and, until #851, only ever consulted at the 60 s
@@ -204,10 +211,15 @@ impl RouteExecution {
     /// `a_repath_and_backoff_cannot_launder_the_851_stall`.
     #[must_use]
     pub fn tick(self, progressed: bool, repaths: u32) -> Self {
-        if progressed { return RouteExecution::fresh(); }
+        if progressed {
+            return RouteExecution::fresh();
+        }
         let quiet_ticks = self.quiet_ticks().saturating_add(1);
         if quiet_ticks >= NAV_STUCK_TICKS {
-            RouteExecution::Stalled { quiet_ticks, repaths }
+            RouteExecution::Stalled {
+                quiet_ticks,
+                repaths,
+            }
         } else {
             RouteExecution::Advancing { quiet_ticks }
         }
@@ -236,25 +248,34 @@ impl RouteExecution {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GoalVerdict {
     goal_id: u64,
-    exec:    RouteExecution,
+    exec: RouteExecution,
 }
 
 impl GoalVerdict {
     /// The verdict a freshly-aimed `goal_id` starts from. Not `Default`: a verdict is always about
     /// some goal, and the goal has to be named.
     pub const fn fresh_for(goal_id: u64) -> Self {
-        GoalVerdict { goal_id, exec: RouteExecution::fresh() }
+        GoalVerdict {
+            goal_id,
+            exec: RouteExecution::fresh(),
+        }
     }
 
     /// Is this verdict about `goal_id`? For callers that must distinguish "a new journey started"
     /// from "this journey progressed" — [`crate::walker::Walker`]'s stall clock is one.
-    pub fn is_about(self, goal_id: u64) -> bool { self.goal_id == goal_id }
+    pub fn is_about(self, goal_id: u64) -> bool {
+        self.goal_id == goal_id
+    }
 
     /// **The only way to read the verdict.** `goal_id` is the goal the caller is about to publish
     /// for; a verdict about any other goal reads [`RouteExecution::fresh`] (see the type doc).
     #[must_use]
     pub fn as_of(self, goal_id: u64) -> RouteExecution {
-        if self.goal_id == goal_id { self.exec } else { RouteExecution::fresh() }
+        if self.goal_id == goal_id {
+            self.exec
+        } else {
+            RouteExecution::fresh()
+        }
     }
 
     /// One nav tick FOR `goal_id`. Ticking a verdict that belongs to another goal starts that
@@ -262,7 +283,10 @@ impl GoalVerdict {
     /// [`GoalVerdict::as_of`]'s, applied here too, so there is exactly one implementation of it.
     #[must_use]
     pub fn tick(self, goal_id: u64, progressed: bool, repaths: u32) -> Self {
-        GoalVerdict { goal_id, exec: self.as_of(goal_id).tick(progressed, repaths) }
+        GoalVerdict {
+            goal_id,
+            exec: self.as_of(goal_id).tick(progressed, repaths),
+        }
     }
 }
 
@@ -300,7 +324,7 @@ pub fn driving_nav_state(route: CommittedRoute, exec: RouteExecution) -> &'stati
         RouteExecution::Stalled { .. } => NAV_STATE_NAVIGATING_STALLED,
         RouteExecution::Advancing { .. } => match route {
             CommittedRoute::Complete => NAV_STATE_NAVIGATING,
-            CommittedRoute::Partial  => NAV_STATE_NAVIGATING_PARTIAL,
+            CommittedRoute::Partial => NAV_STATE_NAVIGATING_PARTIAL,
         },
     }
 }
@@ -396,7 +420,10 @@ pub fn replan_decision(
         // worthless anyway); otherwise let it land.
         Some(f) => moved(f) > GOAL_RESET_DIST,
     };
-    Replan { post: want && may_post, reset_route }
+    Replan {
+        post: want && may_post,
+        reset_route,
+    }
 }
 
 /// May an UNREACHABLE goal be escaped to via an in-zone translocator (#266)? Only when a teleport
@@ -414,7 +441,11 @@ pub fn portal_escape_applies(why: crate::collision::NoRoute) -> bool {
 /// /follow chase has caught up → stand near the leader but STAY latched so it re-engages when the
 /// leader moves (#268). `Drive` = not there yet → keep walking.
 #[derive(Debug, PartialEq, Eq)]
-pub enum ArrivalAction { Drive, Arrived, FollowHold }
+pub enum ArrivalAction {
+    Drive,
+    Arrived,
+    FollowHold,
+}
 
 /// Arrival radius for a one-shot /goto (melee range is ~14u, so 2u keeps us well inside it).
 pub const STOP_DIST: f32 = 2.0;
@@ -441,7 +472,11 @@ pub fn arrival_action(gdist: f32, gdz: f32, following: bool) -> ArrivalAction {
         return ArrivalAction::Drive;
     }
     if following {
-        if gdist <= FOLLOW_DIST { ArrivalAction::FollowHold } else { ArrivalAction::Drive }
+        if gdist <= FOLLOW_DIST {
+            ArrivalAction::FollowHold
+        } else {
+            ArrivalAction::Drive
+        }
     } else if gdist <= STOP_DIST {
         ArrivalAction::Arrived
     } else {
@@ -531,7 +566,8 @@ fn seg_closest(a: [f32; 3], b: [f32; 3], p: [f32; 3]) -> ([f32; 3], f32) {
     let t = if l2 < 1e-6 {
         0.0
     } else {
-        (((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / l2).clamp(0.0, 1.0)
+        (((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / l2)
+            .clamp(0.0, 1.0)
     };
     let c = [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t];
     let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
@@ -717,7 +753,11 @@ pub(crate) const STEER_LOS_CLEARANCE: f32 = eqoxide_core::physics::PLAYER_RADIUS
 /// Not-a-regression guard: `a_resync_must_still_cross_ground_the_controller_can_stand_on` goes RED
 /// if the floor half is ever widened to a `±STEER_LOS_CLEARANCE` sweep (mutation-checked in both
 /// directions).
-pub fn resync_reachable(col: &eqoxide_zone_geometry::collision::Collision, from: [f32; 3], to: [f32; 3]) -> bool {
+pub fn resync_reachable(
+    col: &eqoxide_zone_geometry::collision::Collision,
+    from: [f32; 3],
+    to: [f32; 3],
+) -> bool {
     let clearance = STEER_LOS_CLEARANCE;
     col.carrot_los_clear(from, to, clearance) && col.ground_continuous(from, to)
 }
@@ -894,7 +934,12 @@ pub fn resync_cursor(
 /// and (with the cursor) consumed the descent on frame one — the walker would then drive HORIZONTALLY
 /// into the shaft wall instead of swimming DOWN it. On near-horizontal LAND segments 3D ≡ 2D (the z
 /// contribution vanishes) and the interpolated z equals the segment z, so land steering is unchanged.
-pub fn carrot_along(path: &[[f32; 3]], start_i: usize, from: [f32; 3], reach: f32) -> Option<[f32; 3]> {
+pub fn carrot_along(
+    path: &[[f32; 3]],
+    start_i: usize,
+    from: [f32; 3],
+    reach: f32,
+) -> Option<[f32; 3]> {
     // The unclamped carrot is exactly the LOS-clamped one with an always-clear predicate — byte for
     // byte, by construction — so callers with no collision (and every existing test) are unaffected.
     carrot_along_los(path, start_i, from, reach, |_, _| true)
@@ -924,15 +969,22 @@ pub fn carrot_along(path: &[[f32; 3]], start_i: usize, from: [f32; 3], reach: f3
 /// CROSSES geometry does, which is exactly the corner cut. A clear straight shot therefore keeps the
 /// full `reach`, and gentle bends whose chord stays in open space are unchanged.
 pub fn carrot_along_los(
-    path: &[[f32; 3]], start_i: usize, from: [f32; 3], reach: f32,
+    path: &[[f32; 3]],
+    start_i: usize,
+    from: [f32; 3],
+    reach: f32,
     los: impl Fn([f32; 3], [f32; 3]) -> bool,
 ) -> Option<[f32; 3]> {
     let a = *path.get(start_i)?;
     let b = path.get(start_i + 1).copied().unwrap_or(a);
     let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-    let t = if l2 < 1e-6 { 0.0 }
-        else { (((from[0] - a[0]) * ab[0] + (from[1] - a[1]) * ab[1] + (from[2] - a[2]) * ab[2]) / l2).clamp(0.0, 1.0) };
+    let t = if l2 < 1e-6 {
+        0.0
+    } else {
+        (((from[0] - a[0]) * ab[0] + (from[1] - a[1]) * ab[1] + (from[2] - a[2]) * ab[2]) / l2)
+            .clamp(0.0, 1.0)
+    };
     let mut cur = [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t];
     // The nearest path point is the LOS FLOOR: the walker is essentially on it, so it is always a
     // valid aim. Seeding `best` here UNCHECKED is what stops the clamp from ever STALLING the walker —
@@ -946,15 +998,29 @@ pub fn carrot_along_los(
         let dl = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
         let last = dl >= rem || i + 2 >= path.len();
         let cand = if last {
-            if dl < 1e-6 { cur }
-            else { let s = (rem / dl).min(1.0); [cur[0] + d[0] * s, cur[1] + d[1] * s, cur[2] + d[2] * s] }
-        } else { bp };
+            if dl < 1e-6 {
+                cur
+            } else {
+                let s = (rem / dl).min(1.0);
+                [cur[0] + d[0] * s, cur[1] + d[1] * s, cur[2] + d[2] * s]
+            }
+        } else {
+            bp
+        };
         // Advance the accepted carrot only while the straight shot to it stays clear. The
         // instant it would cross geometry (a corner), stop at the last clear point — the walker
         // aims at the corner and rounds it. `best` may already be the LOS floor `cur`.
-        if los(from, cand) { best = cand; } else { break; }
-        if last { break; }
-        rem -= dl; cur = bp; i += 1;
+        if los(from, cand) {
+            best = cand;
+        } else {
+            break;
+        }
+        if last {
+            break;
+        }
+        rem -= dl;
+        cur = bp;
+        i += 1;
     }
     Some(best)
 }
@@ -996,9 +1062,9 @@ pub const SWIM_VRATE: f32 = 20.0;
 /// safe: buoyancy simply rests the swimmer AT the plane, which is where the route wants it anyway.
 pub fn swim_vspeed(carrot_z: f32, player_z: f32, swim_plane: Option<f32>) -> f32 {
     const DEPTH_TAU: f32 = 0.25; // s — proportional time-constant of the depth hold
-    // The tiny nonzero kept below the plane so buoyancy (wish==0) can never reclaim a mid-water hold.
-    // |MIN_HOLD·dt| < movement::SKIN (0.05) at any real frame dt, so it suppresses buoyancy without
-    // itself drifting the depth. `err` is essentially never exactly 0, but pin the invariant anyway.
+                                 // The tiny nonzero kept below the plane so buoyancy (wish==0) can never reclaim a mid-water hold.
+                                 // |MIN_HOLD·dt| < movement::SKIN (0.05) at any real frame dt, so it suppresses buoyancy without
+                                 // itself drifting the depth. `err` is essentially never exactly 0, but pin the invariant anyway.
     const MIN_HOLD: f32 = 0.1;
     let err = carrot_z - player_z; // + → carrot above the feet (rise); − → carrot below (sink)
     let w = (err / DEPTH_TAU).clamp(-SWIM_VRATE, SWIM_VRATE);
@@ -1021,7 +1087,10 @@ pub fn swim_vspeed(carrot_z: f32, player_z: f32, swim_plane: Option<f32>) -> f32
 /// is measured from `local_path[1]`, which is now BEHIND the walker. The look-ahead collapses and
 /// can invert on a bend, which is the drawn-path-vs-actual-movement divergence in #311.
 pub fn fast_steer_aim(
-    path: &[[f32; 3]], local_i: &mut usize, from: [f32; 3], reach: f32,
+    path: &[[f32; 3]],
+    local_i: &mut usize,
+    from: [f32; 3],
+    reach: f32,
     los: impl Fn([f32; 3], [f32; 3]) -> bool,
 ) -> Option<([f32; 2], f32)> {
     advance_cursor(path, local_i, from);
@@ -1060,9 +1129,16 @@ pub fn advance_cursor(path: &[[f32; 3]], i: &mut usize, from: [f32; 3]) {
         // past it only once the character has actually descended/ascended it. Near-horizontal land
         // segments have a vanishing z term, so 3D ≡ 2D and land steering is unchanged. A genuinely
         // zero-length segment (a==b) still has l2<1e-6 and is skipped, as before.
-        let t = if l2 < 1e-6 { 1.0 }
-            else { ((from[0] - a[0]) * ab[0] + (from[1] - a[1]) * ab[1] + (from[2] - a[2]) * ab[2]) / l2 };
-        if t >= 1.0 { *i += 1; } else { break; }
+        let t = if l2 < 1e-6 {
+            1.0
+        } else {
+            ((from[0] - a[0]) * ab[0] + (from[1] - a[1]) * ab[1] + (from[2] - a[2]) * ab[2]) / l2
+        };
+        if t >= 1.0 {
+            *i += 1;
+        } else {
+            break;
+        }
     }
 }
 
@@ -1092,12 +1168,18 @@ pub struct SteeringContext {
 /// `local` is whatever the fine tier last produced (empty = nothing to steer on). `ctx.fallback` is
 /// the aim of last resort when even the coarse route yields nothing (the straight line to the goal).
 pub fn steer_target(
-    coarse: &[[f32; 3]], path_i: usize,
-    local:  &[[f32; 3]], local_i: &mut usize,
+    coarse: &[[f32; 3]],
+    path_i: usize,
+    local: &[[f32; 3]],
+    local_i: &mut usize,
     ctx: SteeringContext,
     los: impl Fn([f32; 3], [f32; 3]) -> bool,
 ) -> [f32; 3] {
-    let SteeringContext { from, look_ahead, fallback } = ctx;
+    let SteeringContext {
+        from,
+        look_ahead,
+        fallback,
+    } = ctx;
     // Both carrots are LOS-CLAMPED (#685): whichever tier we steer along, the straight aim must not
     // chord across a convex corner. `los` is passed BY REFERENCE to both so one predicate serves both
     // tiers. With an always-clear `los` (no collision) this is byte-for-byte the old behaviour.
@@ -1161,7 +1243,9 @@ mod cursor_resync_tests {
     /// The cursor the walker's monotone advance is left holding when that happens.
     const STALE_I: usize = 2;
 
-    fn always_clear(_: [f32; 3], _: [f32; 3]) -> bool { true }
+    fn always_clear(_: [f32; 3], _: [f32; 3]) -> bool {
+        true
+    }
 
     /// **#673 — a cursor the character has physically overtaken must resync.**
     ///
@@ -1174,14 +1258,18 @@ mod cursor_resync_tests {
         let (a, b) = (HAIRPIN[STALE_I], HAIRPIN[STALE_I + 1]);
         let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
         let l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-        let t = ((LANDED[0] - a[0]) * ab[0] + (LANDED[1] - a[1]) * ab[1] + (LANDED[2] - a[2]) * ab[2]) / l2;
+        let t =
+            ((LANDED[0] - a[0]) * ab[0] + (LANDED[1] - a[1]) * ab[1] + (LANDED[2] - a[2]) * ab[2])
+                / l2;
         assert!(t < 1.0, "fixture no longer pins the advance rule (t = {t})");
 
         let i = resync_cursor(&HAIRPIN, STALE_I, LANDED, always_clear);
         // The character is standing on the idx4→idx5 / idx5→idx6 joint; either segment names where
         // it actually is. What must NOT survive is the stale cursor three segments behind.
-        assert!((4..=5).contains(&i),
-            "cursor must resync to the segment the character is standing on, got {i}");
+        assert!(
+            (4..=5).contains(&i),
+            "cursor must resync to the segment the character is standing on, got {i}"
+        );
     }
 
     /// **#673 step 1 of 3 — the stale cursor collapses the FINE PLANNER'S GOAL onto the character.**
@@ -1203,16 +1291,23 @@ mod cursor_resync_tests {
         // the shared one, and spelled differently enough that an identifier grep missed it.
         let stale = carrot_along(&HAIRPIN, STALE_I, LANDED, LOCAL_REACH).unwrap();
         let d_stale = (stale[0] - LANDED[0]).hypot(stale[1] - LANDED[1]);
-        assert!(d_stale < 1.0,
-            "fixture no longer reproduces the collapse (carrot was {d_stale:.2} u ahead)");
+        assert!(
+            d_stale < 1.0,
+            "fixture no longer reproduces the collapse (carrot was {d_stale:.2} u ahead)"
+        );
 
         let i = resync_cursor(&HAIRPIN, STALE_I, LANDED, always_clear);
         let fixed = carrot_along(&HAIRPIN, i, LANDED, LOCAL_REACH).unwrap();
         let d_fixed = (fixed[0] - LANDED[0]).hypot(fixed[1] - LANDED[1]);
-        assert!(d_fixed > 8.0,
-            "after resync the carrot must actually lead the character; it was {d_fixed:.2} u ahead");
+        assert!(
+            d_fixed > 8.0,
+            "after resync the carrot must actually lead the character; it was {d_fixed:.2} u ahead"
+        );
         // …and it must lead DOWN the ramp (west), i.e. forward along the route.
-        assert!(fixed[0] < LANDED[0], "carrot must lead forward along the route, got {fixed:?}");
+        assert!(
+            fixed[0] < LANDED[0],
+            "carrot must lead forward along the route, got {fixed:?}"
+        );
     }
 
     // ───────── #727 round 3: the sim at the walker's REAL steering reach (review finding A) ─────────
@@ -1222,16 +1317,32 @@ mod cursor_resync_tests {
     /// failure is in the steering loop, not in terrain the harness invented to produce it.
     fn fixture_floor() -> eqoxide_zone_geometry::collision::Collision {
         let quad = |v: Vec<[f32; 3]>| eqoxide_assets::MeshData {
-            positions: v, normals: vec![], uvs: vec![], indices: vec![0, 1, 2, 0, 2, 3],
-            texture_name: None, base_color: [1.0; 4], center: [0.0; 3],
-            render_mode: eqoxide_assets::RenderMode::Opaque, anim: None,
+            positions: v,
+            normals: vec![],
+            uvs: vec![],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            texture_name: None,
+            base_color: [1.0; 4],
+            center: [0.0; 3],
+            render_mode: eqoxide_assets::RenderMode::Opaque,
+            anim: None,
         };
         // `Collision::build` maps mesh [x, y, z] -> world [east, north, height], so a vertex is
         // written [north, height, east].
-        let floor = quad(vec![[100.0, -6.0, -600.0], [200.0, -6.0, -600.0],
-                              [200.0, -6.0, -480.0], [100.0, -6.0, -480.0]]);
+        let floor = quad(vec![
+            [100.0, -6.0, -600.0],
+            [200.0, -6.0, -600.0],
+            [200.0, -6.0, -480.0],
+            [100.0, -6.0, -480.0],
+        ]);
         eqoxide_zone_geometry::collision::Collision::build(
-            &eqoxide_assets::ZoneAssets { terrain: vec![floor], objects: vec![], textures: vec![] }, 32.0)
+            &eqoxide_assets::ZoneAssets {
+                terrain: vec![floor],
+                objects: vec![],
+                textures: vec![],
+            },
+            32.0,
+        )
     }
 
     /// What one `fixture_run` observed.
@@ -1342,21 +1453,24 @@ mod cursor_resync_tests {
     /// the same function `Walker::advance_cursor` passes, not a restatement of it. It used to be a
     /// restatement, and #887 round 1 caught the restatement still claiming to be "the walker's own
     /// predicate" after production's had been changed out from under it.
-    fn fixture_run(col: &eqoxide_zone_geometry::collision::Collision, start_i: usize, resync: bool, verbose: bool)
-        -> Run
-    {
-        const DT: f32 = 0.01;          // ~100 Hz controller frame
-        const FRAMES: u32 = 14;        // 150 ms nav tick = 1 steer_target + 14 fast_steer_aim frames
+    fn fixture_run(
+        col: &eqoxide_zone_geometry::collision::Collision,
+        start_i: usize,
+        resync: bool,
+        verbose: bool,
+    ) -> Run {
+        const DT: f32 = 0.01; // ~100 Hz controller frame
+        const FRAMES: u32 = 14; // 150 ms nav tick = 1 steer_target + 14 fast_steer_aim frames
         const TICKS: u32 = 200;
-        const LOOK_AHEAD: f32 = 5.0;   // walker.rs `drive_walk`
-        // `drive_walk`'s `local_goal` reach is NOT restated here: [`LOCAL_REACH`] is in scope from
-        // `use super::*`, so this harness cannot drift onto a different carrot than production and
-        // the collapse check. (A `const LOCAL_REACH: f32 = super::LOCAL_REACH;` alias stood here
-        // briefly; it could not drift either, but it reads exactly like the copies the #733 review
-        // was hunting, so it is gone.)
+        const LOOK_AHEAD: f32 = 5.0; // walker.rs `drive_walk`
+                                     // `drive_walk`'s `local_goal` reach is NOT restated here: [`LOCAL_REACH`] is in scope from
+                                     // `use super::*`, so this harness cannot drift onto a different carrot than production and
+                                     // the collapse check. (A `const LOCAL_REACH: f32 = super::LOCAL_REACH;` alias stood here
+                                     // briefly; it could not drift either, but it reads exactly like the copies the #733 review
+                                     // was hunting, so it is gone.)
         const LOCAL_BOUND: f32 = 40.0; // walker.rs `drive_walk`
-        // The walker's own clearance, referenced rather than re-derived: it is defined as
-        // `PLAYER_RADIUS` today, so a copy would agree by coincidence and drift silently.
+                                       // The walker's own clearance, referenced rather than re-derived: it is defined as
+                                       // `PLAYER_RADIUS` today, so a copy would agree by coincidence and drift silently.
         let clearance = STEER_LOS_CLEARANCE;
         let los = |a: [f32; 3], b: [f32; 3]| col.carrot_los_clear(a, b, clearance);
         let goal = *HAIRPIN.last().unwrap();
@@ -1372,8 +1486,10 @@ mod cursor_resync_tests {
         // production's does — see the fast loop below.
         let mut wish = [0.0f32; 2];
         let mut b = Bands {
-            x_min: p[0], x_max: p[0],
-            late_x_min: f32::MAX, late_x_max: f32::MIN,
+            x_min: p[0],
+            x_max: p[0],
+            late_x_min: f32::MAX,
+            late_x_max: f32::MIN,
             max_from_landed: 0.0,
             late: false,
         };
@@ -1386,10 +1502,16 @@ mod cursor_resync_tests {
                 let (a, b) = (HAIRPIN[path_i], HAIRPIN[path_i + 1]);
                 let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
                 let l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-                let t = if l2 < 1e-6 { 1.0 } else {
+                let t = if l2 < 1e-6 {
+                    1.0
+                } else {
                     ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / l2
                 };
-                if t >= 1.0 { path_i += 1; } else { break; }
+                if t >= 1.0 {
+                    path_i += 1;
+                } else {
+                    break;
+                }
             }
             if resync {
                 path_i = resync_cursor(&HAIRPIN, path_i, p, |a, b| resync_reachable(col, a, b));
@@ -1397,8 +1519,12 @@ mod cursor_resync_tests {
             let coarse = carrot_along(&HAIRPIN, path_i, p, LOOK_AHEAD).unwrap_or(goal);
             // `drive_walk`: apply whatever the fine planner finished, then drop it if the body has
             // wandered outside the window it was planned from.
-            if !pending.is_empty() { local = std::mem::take(&mut pending); local_i = 0; }
-            if !local.is_empty() && (p[0] - local_from[0]).hypot(p[1] - local_from[1]) > LOCAL_BOUND {
+            if !pending.is_empty() {
+                local = std::mem::take(&mut pending);
+                local_i = 0;
+            }
+            if !local.is_empty() && (p[0] - local_from[0]).hypot(p[1] - local_from[1]) > LOCAL_BOUND
+            {
                 local.clear();
                 local_i = 0;
             }
@@ -1406,11 +1532,13 @@ mod cursor_resync_tests {
             // the CURRENT cursor. This is where a stale cursor is consumed.
             let local_goal = carrot_along(&HAIRPIN, path_i, p, LOCAL_REACH).unwrap_or(coarse);
             local_from = p;
-            pending = match col.find_path_local(p, local_goal, LOCAL_CELL, LOCAL_BOUND, LOCAL_CELL * 2.0) {
-                crate::collision::LocalOutcome::Threaded(s) => s,
-                crate::collision::LocalOutcome::NoWayThrough { steer, .. } => steer,
-                crate::collision::LocalOutcome::Exhausted { steer, .. } => steer,
-            };
+            pending =
+                match col.find_path_local(p, local_goal, LOCAL_CELL, LOCAL_BOUND, LOCAL_CELL * 2.0)
+                {
+                    crate::collision::LocalOutcome::Threaded(s) => s,
+                    crate::collision::LocalOutcome::NoWayThrough { steer, .. } => steer,
+                    crate::collision::LocalOutcome::Exhausted { steer, .. } => steer,
+                };
             // One frame of the controller integrating a MoveIntent: a UNIT `wish_dir` driven at
             // RUN_SPEED for the whole frame. The controller does NOT slow down for a near carrot,
             // which is why an aim inside one frame's travel (44 * 0.01 = 0.44 u) is overshot rather
@@ -1422,27 +1550,42 @@ mod cursor_resync_tests {
             let step = |p: &mut [f32; 3], wish: [f32; 2], b: &mut Bands| {
                 p[0] += wish[0] * eqoxide_core::physics::RUN_SPEED * DT;
                 p[1] += wish[1] * eqoxide_core::physics::RUN_SPEED * DT;
-                if let Some(fz) = col.ground_below(p[0], p[1], p[2] + 4.0, 40.0) { p[2] = fz; }
+                if let Some(fz) = col.ground_below(p[0], p[1], p[2] + 4.0, 40.0) {
+                    p[2] = fz;
+                }
                 b.x_min = b.x_min.min(p[0]);
                 b.x_max = b.x_max.max(p[0]);
                 if b.late {
                     b.late_x_min = b.late_x_min.min(p[0]);
                     b.late_x_max = b.late_x_max.max(p[0]);
                 }
-                b.max_from_landed =
-                    b.max_from_landed.max((p[0] - LANDED[0]).hypot(p[1] - LANDED[1]));
+                b.max_from_landed = b
+                    .max_from_landed
+                    .max((p[0] - LANDED[0]).hypot(p[1] - LANDED[1]));
             };
             // ONE `steer_target` per nav tick (the 150 ms coarse tick, with the LOS clamp). Its aim
             // is what `drive_walk` turns into `MoveIntent.wish_dir` — and `wish_dir` then PERSISTS:
             // the controller keeps integrating that same vector every frame until something writes
             // a new one.
-            let aim = steer_target(&HAIRPIN, path_i, &local, &mut local_i,
-                SteeringContext { from: p, look_ahead: LOOK_AHEAD, fallback: coarse }, los);
+            let aim = steer_target(
+                &HAIRPIN,
+                path_i,
+                &local,
+                &mut local_i,
+                SteeringContext {
+                    from: p,
+                    look_ahead: LOOK_AHEAD,
+                    fallback: coarse,
+                },
+                los,
+            );
             let (adx, ady) = (aim[0] - p[0], aim[1] - p[1]);
             let ad = (adx * adx + ady * ady).sqrt();
             // `drive_walk` publishes no intent for a degenerate aim; the previous tick's intent is
             // what the controller would still be holding, so carry `wish` over unchanged.
-            if ad > 1e-3 { wish = [adx / ad, ady / ad]; }
+            if ad > 1e-3 {
+                wish = [adx / ad, ady / ad];
+            }
             step(&mut p, wish, &mut b);
             // …then the ~10 ms fast loop. `Walker::apply_fast_steering` OVERRIDES `wish_dir` — and
             // only when `!self.local_path.is_empty()`. It never clears it and never stops the body.
@@ -1457,33 +1600,55 @@ mod cursor_resync_tests {
             // this same fixture.
             for _ in 0..FRAMES {
                 if !local.is_empty() {
-                    if let Some((w, _)) = fast_steer_aim(&local, &mut local_i, p, LOOK_AHEAD, |_, _| true) {
+                    if let Some((w, _)) =
+                        fast_steer_aim(&local, &mut local_i, p, LOOK_AHEAD, |_, _| true)
+                    {
                         wish = w;
                     }
                 }
                 step(&mut p, wish, &mut b);
             }
             if verbose {
-                println!("  t{tick:<3} cursor {path_i} local.len {:<3} moved {:.3} u  pos ({:.3},{:.3})",
-                    local.len(), (p[0] - before[0]).hypot(p[1] - before[1]), p[0], p[1]);
+                println!(
+                    "  t{tick:<3} cursor {path_i} local.len {:<3} moved {:.3} u  pos ({:.3},{:.3})",
+                    local.len(),
+                    (p[0] - before[0]).hypot(p[1] - before[1]),
+                    p[0],
+                    p[1]
+                );
             }
             let net = (p[0] - LANDED[0]).hypot(p[1] - LANDED[1]);
             // `head` is the ONE tick-boundary quantity: it is compared against a production log that
             // is itself written once per nav tick. Everything else was recorded inside `step`.
-            if head.len() < 3 { head.push([p[0], p[1]]); }
+            if head.len() < 3 {
+                head.push([p[0], p[1]]);
+            }
             if (p[0] - goal[0]).hypot(p[1] - goal[1]) <= 3.0 {
-                return Run { arrived: true, ticks: tick + 1, net,
-                    x_min: b.x_min, x_max: b.x_max,
-                    late_x_min: b.late_x_min, late_x_max: b.late_x_max,
-                    max_from_landed: b.max_from_landed, head };
+                return Run {
+                    arrived: true,
+                    ticks: tick + 1,
+                    net,
+                    x_min: b.x_min,
+                    x_max: b.x_max,
+                    late_x_min: b.late_x_min,
+                    late_x_max: b.late_x_max,
+                    max_from_landed: b.max_from_landed,
+                    head,
+                };
             }
         }
-        Run { arrived: false, ticks: TICKS, net: (p[0] - LANDED[0]).hypot(p[1] - LANDED[1]),
-            x_min: b.x_min, x_max: b.x_max,
-            late_x_min: b.late_x_min, late_x_max: b.late_x_max,
-            max_from_landed: b.max_from_landed, head }
+        Run {
+            arrived: false,
+            ticks: TICKS,
+            net: (p[0] - LANDED[0]).hypot(p[1] - LANDED[1]),
+            x_min: b.x_min,
+            x_max: b.x_max,
+            late_x_min: b.late_x_min,
+            late_x_max: b.late_x_max,
+            max_from_landed: b.max_from_landed,
+            head,
+        }
     }
-
 
     /// **#673 step 2 of 3 — how the collapse reaches the steering aim.** The round-2 review's
     /// finding A was half right and this test records both halves, because getting this wrong in
@@ -1505,29 +1670,54 @@ mod cursor_resync_tests {
         let d = |q: [f32; 3]| (q[0] - LANDED[0]).hypot(q[1] - LANDED[1]);
 
         let coarse = carrot_along_los(&HAIRPIN, STALE_I, LANDED, 5.0, los).unwrap();
-        assert!(d(coarse) > 10.0,
+        assert!(
+            d(coarse) > 10.0,
             "the COARSE carrot at LOOK_AHEAD is not the collapsed one — if this ever fails, the \
-             round-3 account of #673 is wrong and the round-2 one may be right (was {:.2} u)", d(coarse));
+             round-3 account of #673 is wrong and the round-2 one may be right (was {:.2} u)",
+            d(coarse)
+        );
 
         // `LOCAL_REACH`, not a literal 24.0: this IS `drive_walk`'s `local_goal`, and a bare literal
         // here was a fourth copy of the reach that the #733 review's identifier grep could not see.
         let local_goal = carrot_along(&HAIRPIN, STALE_I, LANDED, LOCAL_REACH).unwrap();
-        assert!(d(local_goal) < 1.0, "local_goal must be the collapsed one (was {:.2} u)", d(local_goal));
+        assert!(
+            d(local_goal) < 1.0,
+            "local_goal must be the collapsed one (was {:.2} u)",
+            d(local_goal)
+        );
 
-        let steer = match col.find_path_local(LANDED, local_goal, LOCAL_CELL, 40.0, LOCAL_CELL * 2.0) {
-            crate::collision::LocalOutcome::Threaded(s) => s,
-            crate::collision::LocalOutcome::NoWayThrough { steer, .. } => steer,
-            crate::collision::LocalOutcome::Exhausted { steer, .. } => steer,
-        };
+        let steer =
+            match col.find_path_local(LANDED, local_goal, LOCAL_CELL, 40.0, LOCAL_CELL * 2.0) {
+                crate::collision::LocalOutcome::Threaded(s) => s,
+                crate::collision::LocalOutcome::NoWayThrough { steer, .. } => steer,
+                crate::collision::LocalOutcome::Exhausted { steer, .. } => steer,
+            };
         // Two points is the threshold at which `steer_target` starts preferring the fine tier. A
         // degenerate stub is therefore not ignored as too short — it is preferred.
-        assert_eq!(steer.len(), 2, "expected a degenerate fine plan, got {steer:?}");
+        assert_eq!(
+            steer.len(),
+            2,
+            "expected a degenerate fine plan, got {steer:?}"
+        );
 
         let mut local_i = 0usize;
-        let aim = steer_target(&HAIRPIN, STALE_I, &steer, &mut local_i,
-            SteeringContext { from: LANDED, look_ahead: 5.0, fallback: coarse }, los);
-        assert!(d(aim) < 1.0,
-            "the steering aim must be collapsed even though the coarse carrot is not (was {:.2} u)", d(aim));
+        let aim = steer_target(
+            &HAIRPIN,
+            STALE_I,
+            &steer,
+            &mut local_i,
+            SteeringContext {
+                from: LANDED,
+                look_ahead: 5.0,
+                fallback: coarse,
+            },
+            los,
+        );
+        assert!(
+            d(aim) < 1.0,
+            "the steering aim must be collapsed even though the coarse carrot is not (was {:.2} u)",
+            d(aim)
+        );
         // One frame's travel is RUN_SPEED * 0.01 = 0.44 u, so an aim this near is overshot, not
         // reached. That is the limit cycle.
         assert!(d(aim) < eqoxide_core::physics::RUN_SPEED * 0.01,
@@ -1572,22 +1762,38 @@ mod cursor_resync_tests {
         let col = fixture_floor();
 
         let stale = fixture_run(&col, STALE_I, false, false);
-        assert!(!stale.arrived, "pre-#727 the fixture must reproduce the stall");
-        assert!(stale.net < 0.5,
+        assert!(
+            !stale.arrived,
+            "pre-#727 the fixture must reproduce the stall"
+        );
+        assert!(
+            stale.net < 0.5,
             "the stall is ZERO net displacement, not slow progress; moved {:.2} u in {} ticks",
-            stale.net, stale.ticks);
+            stale.net,
+            stale.ticks
+        );
         // Zero NET is not the same as never moving — the transient below is real motion. Bound the
         // excursion against the route's own scale: one 8 u leg. In 200 nav ticks (30 s) a walker
         // that were merely slow covers 1320 u; this one never advances a single leg.
-        assert!(stale.max_from_landed < 8.0,
+        assert!(
+            stale.max_from_landed < 8.0,
             "the body wandered {:.2} u from where it landed — that is more than one route leg, so \
-             this is not the no-escaping-trajectory state the test is named for", stale.max_from_landed);
+             this is not the no-escaping-trajectory state the test is named for",
+            stale.max_from_landed
+        );
 
         let fixed = fixture_run(&col, STALE_I, true, false);
-        assert!(fixed.arrived, "the resync must get the character to the goal; it moved {:.2} u", fixed.net);
-        assert!(fixed.ticks <= 20, "arrival took {} nav ticks, expected a handful", fixed.ticks);
+        assert!(
+            fixed.arrived,
+            "the resync must get the character to the goal; it moved {:.2} u",
+            fixed.net
+        );
+        assert!(
+            fixed.ticks <= 20,
+            "arrival took {} nav ticks, expected a handful",
+            fixed.ticks
+        );
     }
-
 
     /// The control for the test above: same harness, same floor, same route, cursor NOT stale and the
     /// fix NOT applied. It arrives. A harness that reports a stall whatever you feed it proves
@@ -1677,11 +1883,16 @@ mod cursor_resync_tests {
         eprintln!(
             "settled span {span:.4}   east of LANDED {:.4}   west of LANDED {:.4}   \
              whole-run extent [{:.4}, {:.4}] (transient included)",
-            run.late_x_max - LANDED[0], LANDED[0] - run.late_x_min,
-            run.x_min, run.x_max);
-        assert!(span < 5.0 * FRAME,
+            run.late_x_max - LANDED[0],
+            LANDED[0] - run.late_x_min,
+            run.x_min,
+            run.x_max
+        );
+        assert!(
+            span < 5.0 * FRAME,
             "the settled cycle must stay within a few frames of travel — a wider band would be \
-             drift, not a limit cycle; it was {span:.3} u");
+             drift, not a limit cycle; it was {span:.3} u"
+        );
         // …and it must sit ON the landing spot, neither creeping west down the route nor east back
         // up it. This is the character claim the withdrawn assertion was reaching for, made about
         // the phase where the harness is actually integrating every frame.
@@ -1695,11 +1906,16 @@ mod cursor_resync_tests {
         const PRODUCTION_HEAD: [[f32; 2]; 3] =
             [[-528.39, 147.34], [-534.33, 144.46], [-536.52, 144.37]];
         for (i, (got, want)) in run.head.iter().zip(PRODUCTION_HEAD.iter()).enumerate() {
-            assert!((got[0] - want[0]).abs() < 0.02 && (got[1] - want[1]).abs() < 0.02,
+            assert!(
+                (got[0] - want[0]).abs() < 0.02 && (got[1] - want[1]).abs() < 0.02,
                 "tick {i} ended at ({:.3}, {:.3}); the production drive_walk loop ended it at \
                  ({:.2}, {:.2}). The harness has stopped modelling the controller's persistent \
                  wish_dir, so any bound it reports is about the harness, not the character.",
-                got[0], got[1], want[0], want[1]);
+                got[0],
+                got[1],
+                want[0],
+                want[1]
+            );
         }
     }
 
@@ -1708,11 +1924,20 @@ mod cursor_resync_tests {
     #[test]
     fn an_on_route_walker_is_left_alone_without_consulting_geometry() {
         let called = std::cell::Cell::new(false);
-        for (i, on_seg) in [(0usize, [-538.0f32, 160.375, 0.0]), (4, [-530.0, 144.375, -5.0])] {
-            let got = resync_cursor(&HAIRPIN, i, on_seg, |_, _| { called.set(true); true });
+        for (i, on_seg) in [
+            (0usize, [-538.0f32, 160.375, 0.0]),
+            (4, [-530.0, 144.375, -5.0]),
+        ] {
+            let got = resync_cursor(&HAIRPIN, i, on_seg, |_, _| {
+                called.set(true);
+                true
+            });
             assert_eq!(got, i, "an on-route cursor must not move");
         }
-        assert!(!called.get(), "the LOS predicate must not be called for an on-route walker");
+        assert!(
+            !called.get(),
+            "the LOS predicate must not be called for an on-route walker"
+        );
     }
 
     /// **The staleness guard EXISTS — this does not pin its value.** On a tight switchback a walker
@@ -1727,9 +1952,17 @@ mod cursor_resync_tests {
     /// constant's own doc for the one thing about it that *is* measured (the `<` boundary).
     #[test]
     fn a_walker_cutting_a_tight_switchback_keeps_its_cursor() {
-        let switchback = [[0.0f32, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 2.0, 0.0], [0.0, 2.0, 0.0]];
-        assert_eq!(resync_cursor(&switchback, 0, [5.0, 1.5, 0.0], always_clear), 0,
-            "a walker mid-leg must not be snapped onto a nearer later segment");
+        let switchback = [
+            [0.0f32, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [10.0, 2.0, 0.0],
+            [0.0, 2.0, 0.0],
+        ];
+        assert_eq!(
+            resync_cursor(&switchback, 0, [5.0, 1.5, 0.0], always_clear),
+            0,
+            "a walker mid-leg must not be snapped onto a nearer later segment"
+        );
     }
 
     /// **A distance TIE resolves to the EARLIER segment, and that is the conservative half of the
@@ -1756,27 +1989,40 @@ mod cursor_resync_tests {
     #[test]
     fn a_distance_tie_between_two_admissible_segments_resolves_to_the_earlier_one() {
         let bars = [
-            [-20.0f32, 10.0, 0.0], [20.0, 10.0, 0.0],   // seg 0: 10 u from the body
-            [20.0, 6.0, 0.0],                            // seg 1: the east connector
-            [-20.0, 6.0, 0.0],                           // seg 2: the +6 bar  ← must win
-            [-20.0, -6.0, 0.0],                          // seg 3: the west connector
-            [20.0, -6.0, 0.0],                           // seg 4: the -6 bar  (ties with seg 2)
-            [20.0, -10.0, 0.0], [-20.0, -10.0, 0.0],
+            [-20.0f32, 10.0, 0.0],
+            [20.0, 10.0, 0.0],  // seg 0: 10 u from the body
+            [20.0, 6.0, 0.0],   // seg 1: the east connector
+            [-20.0, 6.0, 0.0],  // seg 2: the +6 bar  ← must win
+            [-20.0, -6.0, 0.0], // seg 3: the west connector
+            [20.0, -6.0, 0.0],  // seg 4: the -6 bar  (ties with seg 2)
+            [20.0, -10.0, 0.0],
+            [-20.0, -10.0, 0.0],
         ];
         let body = [0.0f32, 0.0, 0.0];
         // Premise: the two candidates really are EXACTLY equidistant, or this pins nothing.
         let (_, d2) = seg_closest(bars[2], bars[3], body);
         let (_, d4) = seg_closest(bars[4], bars[5], body);
-        assert_eq!(d2, d4, "fixture no longer produces an exact tie ({d2} vs {d4})");
+        assert_eq!(
+            d2, d4,
+            "fixture no longer produces an exact tie ({d2} vs {d4})"
+        );
         // Premise: both are admissible — stale (seg 0 is 10 u away) and inside the reach band.
         let (_, d0) = seg_closest(bars[0], bars[1], body);
-        assert!(d0 > CURSOR_STALE_DIST * CURSOR_STALE_DIST, "fixture is not stale (d0² = {d0})");
-        assert!(d2 <= CURSOR_RESYNC_MAX_HOP * CURSOR_RESYNC_MAX_HOP,
-            "fixture's tied candidates are outside the reach band and would be refused by it");
+        assert!(
+            d0 > CURSOR_STALE_DIST * CURSOR_STALE_DIST,
+            "fixture is not stale (d0² = {d0})"
+        );
+        assert!(
+            d2 <= CURSOR_RESYNC_MAX_HOP * CURSOR_RESYNC_MAX_HOP,
+            "fixture's tied candidates are outside the reach band and would be refused by it"
+        );
 
-        assert_eq!(resync_cursor(&bars, 0, body, always_clear), 2,
+        assert_eq!(
+            resync_cursor(&bars, 0, body, always_clear),
+            2,
             "a tie must resolve to the EARLIER segment — the smallest forward jump the evidence \
-             supports. Flip `d_sq < best_sq` to `<=` and this goes to 4.");
+             supports. Flip `d_sq < best_sq` to `<=` and this goes to 4."
+        );
     }
 
     /// **Guard 1 — forward only.** A character that has fallen BACKWARDS onto an earlier part of the
@@ -1793,7 +2039,10 @@ mod cursor_resync_tests {
     /// resync must never declare a leg of the route walked that the character could not reach.
     #[test]
     fn resync_never_jumps_across_blocked_geometry() {
-        assert_eq!(resync_cursor(&HAIRPIN, STALE_I, LANDED, |_, _| false), STALE_I);
+        assert_eq!(
+            resync_cursor(&HAIRPIN, STALE_I, LANDED, |_, _| false),
+            STALE_I
+        );
     }
 
     /// **THE property test.** For a dense sweep of positions and every starting cursor, the returned
@@ -1844,13 +2093,17 @@ mod cursor_resync_tests {
                         // (i) — retained from round 1.
                         assert!(i >= start_i, "moved backwards: {start_i} -> {i}");
                         assert!(i + 1 < HAIRPIN.len(), "cursor {i} is not a segment start");
-                        if start_i + 2 >= HAIRPIN.len() { continue; }
+                        if start_i + 2 >= HAIRPIN.len() {
+                            continue;
+                        }
                         let d_start = d(p, start_i);
                         let d_got = d(p, i);
                         // (ii) a resync may never leave the body further from its own segment.
                         assert!(d_got <= d_start + 1e-3,
                             "resync made the cursor WORSE at {p:?}: {start_i}({d_start:.2}u) -> {i}({d_got:.2}u)");
-                        if i != start_i { moved += 1; }
+                        if i != start_i {
+                            moved += 1;
+                        }
                         // (iii) with a stale cursor, nothing admissible is nearer than what we took.
                         if d_start >= CURSOR_STALE_DIST {
                             for j in (start_i + 1)..(HAIRPIN.len() - 1) {
@@ -1869,7 +2122,10 @@ mod cursor_resync_tests {
             }
         }
         // Premise: the sweep must actually exercise the resync, or (ii)/(iii) are vacuous.
-        assert!(moved > 200, "premise: the sweep resynced only {moved} of {swept} positions");
+        assert!(
+            moved > 200,
+            "premise: the sweep resynced only {moved} of {swept} positions"
+        );
     }
 
     /// **Guard 2 — the reach band.** A segment the predicate says is perfectly clear is still refused
@@ -1883,20 +2139,39 @@ mod cursor_resync_tests {
         // than by the band — measured: deleting `&& d_sq <= hop_sq` SURVIVED this test. At 59
         // segment 2 is strictly nearer and would be adopted on proximity alone, so the band is the
         // only thing that can refuse it.
-        let far = [[0.0f32, 0.0, 0.0], [80.0, 0.0, 0.0], [80.0, 59.0, 0.0], [0.0, 59.0, 0.0]];
+        let far = [
+            [0.0f32, 0.0, 0.0],
+            [80.0, 0.0, 0.0],
+            [80.0, 59.0, 0.0],
+            [0.0, 59.0, 0.0],
+        ];
         let body = [40.0f32, 30.0, 0.0];
         let d = |i: usize, path: &[[f32; 3]]| seg_closest(path[i], path[i + 1], body).1.sqrt();
         assert!(d(2, &far) < d(0, &far),
             "premise: the far segment must WIN on proximity ({:.1} u vs {:.1} u), or this test passes \
              for the wrong reason", d(2, &far), d(0, &far));
-        assert!(CURSOR_RESYNC_MAX_HOP < d(2, &far),
-            "premise: the far segment must sit outside the band ({:.1} u)", d(2, &far));
-        assert_eq!(resync_cursor(&far, 0, body, always_clear), 0,
-            "a segment beyond the reach band must never be adopted, however clear the line to it");
+        assert!(
+            CURSOR_RESYNC_MAX_HOP < d(2, &far),
+            "premise: the far segment must sit outside the band ({:.1} u)",
+            d(2, &far)
+        );
+        assert_eq!(
+            resync_cursor(&far, 0, body, always_clear),
+            0,
+            "a segment beyond the reach band must never be adopted, however clear the line to it"
+        );
         // …and the same fixture DOES resync once the far leg is brought inside the band.
-        let near = [[0.0f32, 0.0, 0.0], [80.0, 0.0, 0.0], [80.0, 40.0, 0.0], [0.0, 40.0, 0.0]];
-        assert_eq!(resync_cursor(&near, 0, body, always_clear), 2,
-            "premise: with the leg inside the band the same geometry must resync");
+        let near = [
+            [0.0f32, 0.0, 0.0],
+            [80.0, 0.0, 0.0],
+            [80.0, 40.0, 0.0],
+            [0.0, 40.0, 0.0],
+        ];
+        assert_eq!(
+            resync_cursor(&near, 0, body, always_clear),
+            2,
+            "premise: with the leg inside the band the same geometry must resync"
+        );
     }
 
     /// Degenerate inputs must be inert, not panic: an empty path, a single waypoint, and a cursor
@@ -1904,8 +2179,14 @@ mod cursor_resync_tests {
     #[test]
     fn resync_is_inert_on_degenerate_paths() {
         assert_eq!(resync_cursor(&[], 0, LANDED, always_clear), 0);
-        assert_eq!(resync_cursor(&[[0.0, 0.0, 0.0]], 0, LANDED, always_clear), 0);
-        assert_eq!(resync_cursor(&HAIRPIN, HAIRPIN.len() - 2, LANDED, always_clear), HAIRPIN.len() - 2);
+        assert_eq!(
+            resync_cursor(&[[0.0, 0.0, 0.0]], 0, LANDED, always_clear),
+            0
+        );
+        assert_eq!(
+            resync_cursor(&HAIRPIN, HAIRPIN.len() - 2, LANDED, always_clear),
+            HAIRPIN.len() - 2
+        );
         assert_eq!(resync_cursor(&HAIRPIN, 99, LANDED, always_clear), 99);
     }
 
@@ -1978,10 +2259,10 @@ mod cursor_resync_tests {
     }
 
     fn hairpin_carrot_stops_leading(sep: f32, start: [f32; 3], mut cursor: usize) -> HairpinRun {
-        const DT: f32 = 0.15;          // the nav tick
-        // `LOCAL_REACH` below is the module constant via `use super::*` — `drive_walk`'s
-        // `local_goal` reach, the fine planner's destination, NOT a steering carrot. Not restated,
-        // not aliased, so this sweep and the collapse check judge the same carrot by construction.
+        const DT: f32 = 0.15; // the nav tick
+                              // `LOCAL_REACH` below is the module constant via `use super::*` — `drive_walk`'s
+                              // `local_goal` reach, the fine planner's destination, NOT a steering carrot. Not restated,
+                              // not aliased, so this sweep and the collapse check judge the same carrot by construction.
         let route = hairpin_route(sep);
         let goal = *route.last().unwrap();
         let mut p = start;
@@ -1991,10 +2272,16 @@ mod cursor_resync_tests {
                 let (a, b) = (route[cursor], route[cursor + 1]);
                 let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
                 let l2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
-                let t = if l2 < 1e-6 { 1.0 } else {
+                let t = if l2 < 1e-6 {
+                    1.0
+                } else {
                     ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / l2
                 };
-                if t >= 1.0 { cursor += 1; } else { break; }
+                if t >= 1.0 {
+                    cursor += 1;
+                } else {
+                    break;
+                }
             }
             // Observe, before the resync, whether this tick is one only #733's trigger can see.
             if cursor + 1 < route.len() {
@@ -2015,10 +2302,16 @@ mod cursor_resync_tests {
                 p[1] += d[1] / len * step;
             }
             if (p[0] - goal[0]).hypot(p[1] - goal[1]) <= 4.0 {
-                return HairpinRun { pinned: false, collapse_only_ticks };
+                return HairpinRun {
+                    pinned: false,
+                    collapse_only_ticks,
+                };
             }
         }
-        HairpinRun { pinned: true, collapse_only_ticks }
+        HairpinRun {
+            pinned: true,
+            collapse_only_ticks,
+        }
     }
 
     /// **MEASURED (#727 round 2): the deadlock's attracting fixed point sits exactly ON the
@@ -2060,11 +2353,15 @@ mod cursor_resync_tests {
         let mut pinned = Vec::new();
         for k in 0..8 {
             let y = 6.25 + 0.25 * k as f32;
-            if hairpin_carrot_stops_leading(8.0, [40.0, y, 0.0], 5).pinned { pinned.push(y); }
+            if hairpin_carrot_stops_leading(8.0, [40.0, y, 0.0], 5).pinned {
+                pinned.push(y);
+            }
         }
-        assert!(pinned.is_empty(),
+        assert!(
+            pinned.is_empty(),
             "the guard-boundary band still deadlocks at offsets {pinned:?} — the fixed point at \
-             exactly CURSOR_STALE_DIST must be OUTSIDE the guard");
+             exactly CURSOR_STALE_DIST must be OUTSIDE the guard"
+        );
     }
 
     /// **MEASURED (#733): carrot pinning is cleared at EVERY leg separation this sweep measures,
@@ -2113,7 +2410,9 @@ mod cursor_resync_tests {
                     let x = xi as f32 * 8.0;
                     total += 1;
                     let run = hairpin_carrot_stops_leading(sep, [x, y, 0.0], xi);
-                    if run.pinned { pinned += 1; }
+                    if run.pinned {
+                        pinned += 1;
+                    }
                     collapse_only += run.collapse_only_ticks;
                 }
                 yi += 1;
@@ -2124,18 +2423,25 @@ mod cursor_resync_tests {
         // the sweep at the first failure and prints a one-row table, which is useless as the
         // `before` column of a comparison — the mutation run has to publish the same seven rows the
         // fixed run does or the table is not a comparison at all.
-        let rows: Vec<(f32, usize, usize, u32)> =
-            [4.0f32, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0].into_iter()
-                .map(|sep| { let (w, t, c) = count(sep); (sep, w, t, c) }).collect();
+        let rows: Vec<(f32, usize, usize, u32)> = [4.0f32, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0]
+            .into_iter()
+            .map(|sep| {
+                let (w, t, c) = count(sep);
+                (sep, w, t, c)
+            })
+            .collect();
         for (sep, w, t, c) in &rows {
             println!(
                 "hairpin leg separation {sep:>4} u: carrot pinned {w}/{t}  \
-                 (collapse-only trigger ticks: {c})");
+                 (collapse-only trigger ticks: {c})"
+            );
         }
         for (sep, w, t, c) in &rows {
             // "carrot-pinned", NOT "wedged" — see this test's THE LIMIT paragraph.
-            assert_eq!(*w, 0,
-                "carrot pinning must be cleared at {sep} u separation, got {w}/{t} carrot-pinned");
+            assert_eq!(
+                *w, 0,
+                "carrot pinning must be cleared at {sep} u separation, got {w}/{t} carrot-pinned"
+            );
             if *sep < CURSOR_STALE_DIST {
                 assert!(*c > 0,
                     "premise: at {sep} u separation the #733 trigger never fired inside the distance \
@@ -2157,7 +2463,11 @@ mod cursor_resync_tests {
             let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
             let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
             if left <= l || i + 2 >= path.len() {
-                let t = if l < 1e-9 { 0.0 } else { (left / l).clamp(0.0, 1.0) };
+                let t = if l < 1e-9 {
+                    0.0
+                } else {
+                    (left / l).clamp(0.0, 1.0)
+                };
                 return [a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t];
             }
             left -= l;
@@ -2173,14 +2483,54 @@ mod cursor_resync_tests {
         vec![
             ("hairpin 4u", hairpin_route(4.0)),
             ("hairpin 8u", hairpin_route(8.0)),
-            ("switchback", vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 2.0, 0.0], [0.0, 2.0, 0.0]]),
-            ("straight",   vec![[0.0, 0.0, 0.0], [20.0, 0.0, 0.0], [40.0, 0.0, 0.0], [60.0, 0.0, 0.0]]),
-            ("3-D ramp",   vec![[0.0, 0.0, 0.0], [10.0, 0.0, 10.0], [20.0, 0.0, 0.0],
-                                [30.0, 0.0, -10.0], [40.0, 0.0, 0.0]]),
-            ("zigzag",     vec![[0.0, 0.0, 0.0], [10.0, 10.0, 0.0], [20.0, 0.0, 0.0],
-                                [30.0, 10.0, 0.0], [40.0, 0.0, 0.0]]),
-            ("dup vertex", vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [10.0, 0.0, 0.0],
-                                [10.0, 10.0, 0.0], [0.0, 10.0, 0.0]]),
+            (
+                "switchback",
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [10.0, 0.0, 0.0],
+                    [10.0, 2.0, 0.0],
+                    [0.0, 2.0, 0.0],
+                ],
+            ),
+            (
+                "straight",
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [20.0, 0.0, 0.0],
+                    [40.0, 0.0, 0.0],
+                    [60.0, 0.0, 0.0],
+                ],
+            ),
+            (
+                "3-D ramp",
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [10.0, 0.0, 10.0],
+                    [20.0, 0.0, 0.0],
+                    [30.0, 0.0, -10.0],
+                    [40.0, 0.0, 0.0],
+                ],
+            ),
+            (
+                "zigzag",
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [10.0, 10.0, 0.0],
+                    [20.0, 0.0, 0.0],
+                    [30.0, 10.0, 0.0],
+                    [40.0, 0.0, 0.0],
+                ],
+            ),
+            (
+                "dup vertex",
+                vec![
+                    [0.0, 0.0, 0.0],
+                    [10.0, 0.0, 0.0],
+                    [10.0, 0.0, 0.0],
+                    [10.0, 10.0, 0.0],
+                    [0.0, 10.0, 0.0],
+                ],
+            ),
         ]
     }
 
@@ -2192,7 +2542,9 @@ mod cursor_resync_tests {
         while x <= 88.0 {
             let mut y = -6.0f32;
             while y <= 12.0 {
-                for z in [0.0f32, 6.0] { v.push([x, y, z]); }
+                for z in [0.0f32, 6.0] {
+                    v.push([x, y, z]);
+                }
                 y += 3.0;
             }
             x += 6.0;
@@ -2222,21 +2574,30 @@ mod cursor_resync_tests {
         for (name, path) in arclength_fixtures() {
             for start_i in 0..path.len().saturating_sub(1) {
                 for from in arclength_bodies() {
-                    let Some((s_proj, s_near, total)) = cursor_arclengths(&path, start_i, from) else {
+                    let Some((s_proj, s_near, total)) = cursor_arclengths(&path, start_i, from)
+                    else {
                         continue;
                     };
                     checked += 1;
                     let d = |a: [f32; 3], b: [f32; 3]| {
-                        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+                        ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2))
+                            .sqrt()
                     };
                     // s_projection is the projection onto segment `start_i`.
                     let (proj, _) = seg_closest(path[start_i], path[start_i + 1], from);
-                    assert!(d(point_at_arclength(&path, start_i, s_proj), proj) < 1e-2,
+                    assert!(
+                        d(point_at_arclength(&path, start_i, s_proj), proj) < 1e-2,
                         "{name} start {start_i} body {from:?}: s_projection {s_proj} is not the \
-                         projection onto the cursor's own segment");
+                         projection onto the cursor's own segment"
+                    );
                     // total ends at the last vertex.
-                    assert!(d(point_at_arclength(&path, start_i, total), *path.last().unwrap()) < 1e-2,
-                        "{name} start {start_i}: total {total} does not reach the final vertex");
+                    assert!(
+                        d(
+                            point_at_arclength(&path, start_i, total),
+                            *path.last().unwrap()
+                        ) < 1e-2,
+                        "{name} start {start_i}: total {total} does not reach the final vertex"
+                    );
                     assert!(s_near >= -1e-4 && s_near <= total + 1e-3,
                         "{name} start {start_i} body {from:?}: s_body {s_near} outside [0, {total}]");
                     // s_body beats every resampled point on the route ahead.
@@ -2253,7 +2614,10 @@ mod cursor_resync_tests {
                 }
             }
         }
-        assert!(checked > 5_000, "premise: the sweep only measured {checked} cases");
+        assert!(
+            checked > 5_000,
+            "premise: the sweep only measured {checked} cases"
+        );
     }
 
     /// **[`carrot_leads`] judges the carrot production actually builds (#733).**
@@ -2278,21 +2642,30 @@ mod cursor_resync_tests {
                         continue;
                     };
                     for reach in [5.0f32, LOCAL_REACH, 400.0] {
-                        let built = carrot_along(&path, start_i, from, reach)
-                            .expect("carrot_along must produce a carrot wherever start_i names a segment");
-                        let modelled = point_at_arclength(&path, start_i, (s_proj + reach).min(total));
-                        let sep = ((built[0] - modelled[0]).powi(2) + (built[1] - modelled[1]).powi(2)
-                                 + (built[2] - modelled[2]).powi(2)).sqrt();
-                        assert!(sep < 1e-2,
+                        let built = carrot_along(&path, start_i, from, reach).expect(
+                            "carrot_along must produce a carrot wherever start_i names a segment",
+                        );
+                        let modelled =
+                            point_at_arclength(&path, start_i, (s_proj + reach).min(total));
+                        let sep = ((built[0] - modelled[0]).powi(2)
+                            + (built[1] - modelled[1]).powi(2)
+                            + (built[2] - modelled[2]).powi(2))
+                        .sqrt();
+                        assert!(
+                            sep < 1e-2,
                             "{name} start {start_i} body {from:?} reach {reach}: the carrot \
                              production builds is {built:?} but the collapse check models it at \
-                             {modelled:?} ({sep} u apart) — the two have drifted");
+                             {modelled:?} ({sep} u apart) — the two have drifted"
+                        );
                         checked += 1;
                     }
                 }
             }
         }
-        assert!(checked > 5_000, "premise: the sweep only measured {checked} cases");
+        assert!(
+            checked > 5_000,
+            "premise: the sweep only measured {checked} cases"
+        );
     }
 
     /// **PROPERTY (#733): after a resync with clear geometry the carrot leads the body — always,
@@ -2332,37 +2705,56 @@ mod cursor_resync_tests {
         for (name, path) in arclength_fixtures() {
             for start_i in 0..path.len() {
                 for from in arclength_bodies() {
-                    if path.len() < 3 || start_i + 2 >= path.len() { continue; }
+                    if path.len() < 3 || start_i + 2 >= path.len() {
+                        continue;
+                    }
                     // Nearest forward segment, by the same primitive `resync_cursor` scans with.
                     let mut near_sq = f32::INFINITY;
                     for i in start_i..(path.len() - 1) {
                         let (_, d_sq) = seg_closest(path[i], path[i + 1], from);
-                        if d_sq < near_sq { near_sq = d_sq; }
+                        if d_sq < near_sq {
+                            near_sq = d_sq;
+                        }
                     }
-                    if near_sq.sqrt() >= CURSOR_RESYNC_MAX_HOP - 0.01 { continue; }
+                    if near_sq.sqrt() >= CURSOR_RESYNC_MAX_HOP - 0.01 {
+                        continue;
+                    }
                     let (_, s_near, total) = cursor_arclengths(&path, start_i, from).unwrap();
-                    if total - s_near <= 1.0 { continue; }
+                    if total - s_near <= 1.0 {
+                        continue;
+                    }
 
                     checked += 1;
                     if !carrot_leads(&path, start_i, from, LOCAL_REACH) {
                         collapsed_in += 1;
                         let (_, d0_sq) = seg_closest(path[start_i], path[start_i + 1], from);
-                        if d0_sq < CURSOR_STALE_DIST * CURSOR_STALE_DIST { collapsed_inside_guard += 1; }
+                        if d0_sq < CURSOR_STALE_DIST * CURSOR_STALE_DIST {
+                            collapsed_inside_guard += 1;
+                        }
                     }
                     let out = resync_cursor(&path, start_i, from, always_clear);
-                    assert!(carrot_leads(&path, out, from, LOCAL_REACH),
+                    assert!(
+                        carrot_leads(&path, out, from, LOCAL_REACH),
                         "{name}: cursor {start_i} → {out} for a body at {from:?} still leaves the \
-                         carrot at or behind the body");
+                         carrot at or behind the body"
+                    );
                 }
             }
         }
-        assert!(checked > 2_000, "premise: the sweep only measured {checked} cases");
-        assert!(collapsed_in > 100,
+        assert!(
+            checked > 2_000,
+            "premise: the sweep only measured {checked} cases"
+        );
+        assert!(
+            collapsed_in > 100,
             "premise: only {collapsed_in} swept inputs were collapsed at all — the property is \
-             passing on cases that were never broken");
-        assert!(collapsed_inside_guard > 20,
+             passing on cases that were never broken"
+        );
+        assert!(
+            collapsed_inside_guard > 20,
             "premise: only {collapsed_inside_guard} swept inputs were collapsed while INSIDE the \
-             distance guard, so this sweep is not reaching the class #733 adds");
+             distance guard, so this sweep is not reaching the class #733 adds"
+        );
     }
 
     /// **The two edges [`carrot_leads`]'s own doc claims, pinned so the claims are not free (#733).**
@@ -2383,20 +2775,30 @@ mod cursor_resync_tests {
     fn carrot_leads_is_honest_at_the_route_end_and_where_it_can_measure_nothing() {
         let route = hairpin_route(8.0);
         let end = *route.last().unwrap();
-        assert!(!carrot_leads(&route, route.len() - 2, end, LOCAL_REACH),
-            "a body ON the final vertex has no route ahead of it, so no carrot can lead it");
+        assert!(
+            !carrot_leads(&route, route.len() - 2, end, LOCAL_REACH),
+            "a body ON the final vertex has no route ahead of it, so no carrot can lead it"
+        );
         // …and one step back from the end it does lead again, so the assert above is about the end
         // and not about the last segment being special.
         let stepped_back = [end[0] + 3.0, end[1], end[2]];
-        assert!(carrot_leads(&route, route.len() - 2, stepped_back, LOCAL_REACH),
-            "premise: a body short of the final vertex must still have a leading carrot");
+        assert!(
+            carrot_leads(&route, route.len() - 2, stepped_back, LOCAL_REACH),
+            "premise: a body short of the final vertex must still have a leading carrot"
+        );
 
-        assert!(carrot_leads(&[], 0, end, LOCAL_REACH),
-            "an empty path measures nothing; that is not evidence of a collapse");
-        assert!(carrot_leads(&route, route.len() - 1, end, LOCAL_REACH),
-            "a cursor past the last segment measures nothing; that is not evidence of a collapse");
-        assert!(carrot_leads(&route, 999, end, LOCAL_REACH),
-            "an out-of-range cursor measures nothing; that is not evidence of a collapse");
+        assert!(
+            carrot_leads(&[], 0, end, LOCAL_REACH),
+            "an empty path measures nothing; that is not evidence of a collapse"
+        );
+        assert!(
+            carrot_leads(&route, route.len() - 1, end, LOCAL_REACH),
+            "a cursor past the last segment measures nothing; that is not evidence of a collapse"
+        );
+        assert!(
+            carrot_leads(&route, 999, end, LOCAL_REACH),
+            "an out-of-range cursor measures nothing; that is not evidence of a collapse"
+        );
     }
 
     /// **REGRESSION (#733): the sub-guard hairpin's fixed point, as one arithmetic example.**
@@ -2418,25 +2820,43 @@ mod cursor_resync_tests {
         let route = hairpin_route(4.0);
         let body = [60.0f32, 4.0, 0.0];
         let (cursor, on_return_leg) = (7usize, 13usize);
-        assert_eq!(route[cursor], [56.0, 0.0, 0.0], "premise: the cursor names the outbound leg");
-        assert_eq!(route[on_return_leg], [64.0, 4.0, 0.0], "premise: segment 13 is the return leg");
+        assert_eq!(
+            route[cursor],
+            [56.0, 0.0, 0.0],
+            "premise: the cursor names the outbound leg"
+        );
+        assert_eq!(
+            route[on_return_leg],
+            [64.0, 4.0, 0.0],
+            "premise: segment 13 is the return leg"
+        );
 
         let (_, d0_sq) = seg_closest(route[cursor], route[cursor + 1], body);
-        assert!(d0_sq < CURSOR_STALE_DIST * CURSOR_STALE_DIST,
+        assert!(
+            d0_sq < CURSOR_STALE_DIST * CURSOR_STALE_DIST,
             "premise: the whole cycle fits INSIDE the distance guard ({} u), which is why #727's \
-             trigger is structurally blind to it", d0_sq.sqrt());
+             trigger is structurally blind to it",
+            d0_sq.sqrt()
+        );
 
         let (s_proj, s_near, total) = cursor_arclengths(&route, cursor, body).unwrap();
         assert!((s_proj - 4.0).abs() < 1e-3 && (s_near - 48.0).abs() < 1e-3 && (total - 108.0).abs() < 1e-3,
             "premise: expected the fixed point's arclengths (4, 48, 108), got ({s_proj}, {s_near}, {total})");
-        assert!(!carrot_leads(&route, cursor, body, LOCAL_REACH),
+        assert!(
+            !carrot_leads(&route, cursor, body, LOCAL_REACH),
             "the carrot lands at {} and the body is at {s_near} — that is the collapse",
-            (s_proj + LOCAL_REACH).min(total));
+            (s_proj + LOCAL_REACH).min(total)
+        );
 
-        assert_eq!(resync_cursor(&route, cursor, body, always_clear), on_return_leg,
-            "the resync must move the cursor onto the leg the body is really on");
-        assert!(carrot_leads(&route, on_return_leg, body, LOCAL_REACH),
-            "and the carrot must lead again once it does");
+        assert_eq!(
+            resync_cursor(&route, cursor, body, always_clear),
+            on_return_leg,
+            "the resync must move the cursor onto the leg the body is really on"
+        );
+        assert!(
+            carrot_leads(&route, on_return_leg, body, LOCAL_REACH),
+            "and the carrot must lead again once it does"
+        );
     }
 }
 
@@ -2459,8 +2879,8 @@ mod tests {
     fn following_a_moving_leader_lets_the_plan_land() {
         // Leader at (100,0,0), a plan for it is in flight. It walks ~6.6u per tick (RUN_SPEED·0.15).
         let mut in_flight = Some((100.0, 0.0, 0.0));
-        let mut planned   = Some((100.0, 0.0, 0.0));
-        let mut leader    = (100.0f32, 0.0f32, 0.0f32);
+        let mut planned = Some((100.0, 0.0, 0.0));
+        let mut leader = (100.0f32, 0.0f32, 0.0f32);
         let mut posts = 0;
         for tick in 0..10 {
             leader.0 += 6.6; // the leader keeps walking
@@ -2481,8 +2901,14 @@ mod tests {
         // Once the plan LANDS (nothing in flight), a leader that has since drifted past one nav cell
         // must be re-planned for — otherwise the chase would never update at all.
         let d = replan_decision(planned, (leader.0 + 20.0, 0.0, 0.0), None, false, true);
-        assert!(d.post, "with no plan in flight, a leader that moved a cell+ must trigger a re-plan");
-        assert!(!d.reset_route, "but 20u is a drift, not a new destination — keep walking the route");
+        assert!(
+            d.post,
+            "with no plan in flight, a leader that moved a cell+ must trigger a re-plan"
+        );
+        assert!(
+            !d.reset_route,
+            "but 20u is a drift, not a new destination — keep walking the route"
+        );
 
         // A leader who RUNS AWAY is still the same goal: never throw the route away and freeze.
         let d = replan_decision(planned, (leader.0 + 500.0, 0.0, 0.0), None, false, true);
@@ -2490,8 +2916,17 @@ mod tests {
             "a fleeing leader is still the SAME goal — re-plan for it, but never drop the route and stop");
 
         // A genuinely NEW destination (a fresh one-shot /goto far away) DOES reset the route.
-        let d = replan_decision(planned, (leader.0 + 500.0, 0.0, 0.0), in_flight, false, false);
-        assert!(d.post && d.reset_route, "a far-away new goto supersedes the in-flight plan and resets the route");
+        let d = replan_decision(
+            planned,
+            (leader.0 + 500.0, 0.0, 0.0),
+            in_flight,
+            false,
+            false,
+        );
+        assert!(
+            d.post && d.reset_route,
+            "a far-away new goto supersedes the in-flight plan and resets the route"
+        );
     }
 
     /// **An in-zone portal escape (#266) may only be attempted for a goal a portal could actually
@@ -2506,14 +2941,23 @@ mod tests {
         use crate::collision::NoRoute;
         // Walled off from a perfectly good goal, or boxed in ourselves → a teleport might genuinely
         // be the way out. That is what #266 is for.
-        assert!(portal_escape_applies(NoRoute::SearchClosed), "a walled-off goal may be escaped to");
-        assert!(portal_escape_applies(NoRoute::StartIsolated), "a boxed-in start may be escaped from");
+        assert!(
+            portal_escape_applies(NoRoute::SearchClosed),
+            "a walled-off goal may be escaped to"
+        );
+        assert!(
+            portal_escape_applies(NoRoute::StartIsolated),
+            "a boxed-in start may be escaped from"
+        );
         // No floor under the goal / no geometry at all: no teleport anywhere reaches a place that
         // does not exist. Redirecting is nonsense AND it buries the agent's real reason.
         assert!(!portal_escape_applies(NoRoute::GoalNotWalkable),
             "a goal with no walkable floor must NOT be redirected through a portal — the agent needs \
              `goal_not_walkable` (fix your coordinates), not the portal's `search_closed`");
-        assert!(!portal_escape_applies(NoRoute::NoGeometry), "no collision loaded is not a portal problem");
+        assert!(
+            !portal_escape_applies(NoRoute::NoGeometry),
+            "no collision loaded is not a portal problem"
+        );
     }
 
     /// **THE LIVENESS INVARIANT: no sequence of goals may leave the planner wedged.**
@@ -2537,7 +2981,9 @@ mod tests {
     fn no_goal_sequence_can_wedge_the_planner() {
         // Adversarial goal motion, including the exact sequence that deadlocked: re-aim 20u away
         // (> GOAL_REPLAN_DIST 8, < GOAL_RESET_DIST 40) BEFORE the in-flight plan lands.
-        let moves: [f32; 12] = [0.0, 0.3, 20.0, 9.0, 1320.0, 0.0, 12.0, 39.0, 41.0, 0.5, 20.0, 200.0];
+        let moves: [f32; 12] = [
+            0.0, 0.3, 20.0, 9.0, 1320.0, 0.0, 12.0, 39.0, 41.0, 0.5, 20.0, 200.0,
+        ];
         for &is_chase in &[true, false] {
             for &replan_coarse in &[true, false] {
                 let mut planned: Option<(f32, f32, f32)> = None;
@@ -2561,7 +3007,7 @@ mod tests {
                     if in_flight.is_some() {
                         in_flight_age += 1;
                         if in_flight_age >= 2 {
-                            in_flight = None;      // reply consumed -> plan_goal cleared, ALWAYS
+                            in_flight = None; // reply consumed -> plan_goal cleared, ALWAYS
                             ticks_since_route = 0; // and the walker got a route
                         }
                     }
@@ -2593,15 +3039,20 @@ mod tests {
         // we correctly do NOT supersede the in-flight plan...
         let b = (120.0f32, 0.0, 0.0);
         let d = replan_decision(planned, b, in_flight, false, false);
-        assert!(!d.post, "an in-flight plan for essentially this goal is left to land");
+        assert!(
+            !d.post,
+            "an in-flight plan for essentially this goal is left to land"
+        );
 
         // ...and when it lands, `plan_goal` is CLEARED (apply_plan always runs now). B must then be
         // planned for. If the reply had been dropped instead, in_flight would still be Some(a) here
         // and this would be `false` forever — the deadlock.
         let d = replan_decision(planned, b, None, false, false);
-        assert!(d.post,
+        assert!(
+            d.post,
             "once the in-flight plan is consumed, a goal that has moved must be re-planned for — \
-             otherwise the character is frozen at `planning` permanently");
+             otherwise the character is frozen at `planning` permanently"
+        );
     }
 
     /// A goal that has not meaningfully moved must not re-plan at all (the cheap half of B1).
@@ -2610,7 +3061,10 @@ mod tests {
         let planned = Some((100.0, 0.0, 0.0));
         // Sub-cell jitter (server position noise, a stationary leader breathing).
         let d = replan_decision(planned, (100.5, 0.3, 0.0), None, false, true);
-        assert!(!d.post && !d.reset_route, "sub-cell jitter is the SAME goal — do not re-plan on it");
+        assert!(
+            !d.post && !d.reset_route,
+            "sub-cell jitter is the SAME goal — do not re-plan on it"
+        );
         // But a proactive re-plan (#246) still gets through.
         let d = replan_decision(planned, (100.5, 0.3, 0.0), None, true, false);
         assert!(d.post, "an armed proactive re-plan must still post");
@@ -2624,10 +3078,10 @@ mod tests {
         assert_eq!(arrival_action(3.0, 0.0, false), ArrivalAction::Drive);
         // /follow (following=true): HOLDS within FOLLOW_DIST(10u) — keeps the chase, never "arrives" —
         // and drives again once the leader moves past it (#268). A one-shot goto never HoldFollows.
-        assert_eq!(arrival_action(1.0, 0.0, true),  ArrivalAction::FollowHold);
-        assert_eq!(arrival_action(9.0, 0.0, true),  ArrivalAction::FollowHold);
+        assert_eq!(arrival_action(1.0, 0.0, true), ArrivalAction::FollowHold);
+        assert_eq!(arrival_action(9.0, 0.0, true), ArrivalAction::FollowHold);
         assert_eq!(arrival_action(12.0, 0.0, true), ArrivalAction::Drive); // leader walked off → re-engage
-        // Crucially, a follower within melee range does NOT get the terminal `Arrived` a goto would.
+                                                                           // Crucially, a follower within melee range does NOT get the terminal `Arrived` a goto would.
         assert_ne!(arrival_action(1.0, 0.0, true), ArrivalAction::Arrived);
     }
 
@@ -2637,21 +3091,36 @@ mod tests {
     fn arrival_action_rejects_wrong_floor_z() {
         use super::{arrival_action, ArrivalAction, Z_ARRIVAL_TOL};
         // Perfect horizontally (well inside STOP_DIST) but a whole floor (50u) below the goal.
-        assert_eq!(arrival_action(0.5, 50.0, false), ArrivalAction::Drive,
-            "goto: dead-on x/y but a floor below the goal must NOT report Arrived");
-        assert_eq!(arrival_action(0.5, -50.0, false), ArrivalAction::Drive,
-            "goto: a floor ABOVE the goal must NOT report Arrived either (sign-agnostic)");
+        assert_eq!(
+            arrival_action(0.5, 50.0, false),
+            ArrivalAction::Drive,
+            "goto: dead-on x/y but a floor below the goal must NOT report Arrived"
+        );
+        assert_eq!(
+            arrival_action(0.5, -50.0, false),
+            ArrivalAction::Drive,
+            "goto: a floor ABOVE the goal must NOT report Arrived either (sign-agnostic)"
+        );
         // Same for /follow: a leader one storey up is not "caught up" — keep driving, don't Hold.
-        assert_eq!(arrival_action(0.5, 50.0, true), ArrivalAction::Drive,
-            "follow: leader a floor up must NOT report FollowHold");
+        assert_eq!(
+            arrival_action(0.5, 50.0, true),
+            ArrivalAction::Drive,
+            "follow: leader a floor up must NOT report FollowHold"
+        );
         // Companion: dead-on x/y AND on the goal's floor (within tolerance) DOES arrive / hold.
         assert_eq!(arrival_action(0.5, 0.0, false), ArrivalAction::Arrived);
-        assert_eq!(arrival_action(0.5, 0.0, true),  ArrivalAction::FollowHold);
+        assert_eq!(arrival_action(0.5, 0.0, true), ArrivalAction::FollowHold);
         // Just inside the vertical tolerance (standing height / a step-up) still counts as arrived...
-        assert_eq!(arrival_action(0.5, Z_ARRIVAL_TOL - 0.5, false), ArrivalAction::Arrived);
+        assert_eq!(
+            arrival_action(0.5, Z_ARRIVAL_TOL - 0.5, false),
+            ArrivalAction::Arrived
+        );
         // ...and just outside it does not. (Mutation check: delete the gdz gate in `arrival_action`
         // and the wrong-floor asserts above flip to Arrived — the test goes RED.)
-        assert_eq!(arrival_action(0.5, Z_ARRIVAL_TOL + 0.5, false), ArrivalAction::Drive);
+        assert_eq!(
+            arrival_action(0.5, Z_ARRIVAL_TOL + 0.5, false),
+            ArrivalAction::Drive
+        );
     }
 
     /// #311 regression: the fast-steering loop re-aims every ~10ms, but `local_path` is only
@@ -2674,20 +3143,35 @@ mod tests {
         // East leg (0,0)->(6,0), then a 90° bend onto a north leg (6,0)->(6,12); LOCAL_CELL(2u)
         // spacing like the real fine plan.
         let local_path: Vec<[f32; 3]> = vec![
-            [0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [4.0, 0.0, 0.0], [6.0, 0.0, 0.0],
-            [6.0, 2.0, 0.0], [6.0, 4.0, 0.0], [6.0, 6.0, 0.0], [6.0, 8.0, 0.0],
-            [6.0, 10.0, 0.0], [6.0, 12.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [4.0, 0.0, 0.0],
+            [6.0, 0.0, 0.0],
+            [6.0, 2.0, 0.0],
+            [6.0, 4.0, 0.0],
+            [6.0, 6.0, 0.0],
+            [6.0, 8.0, 0.0],
+            [6.0, 10.0, 0.0],
+            [6.0, 12.0, 0.0],
         ];
         let mut local_i = 0usize;
         let mut pos = [0.0f32, 0.0f32, 0.0f32]; // flat path (z=0): 3D projection ≡ the 2D it replaced
         const DT: f32 = 0.01; // ~10ms fast-steering tick
         let mut min_forward_dot = f32::MAX;
-        for _ in 0..15 { // 150ms — exactly one local_path gate, deliberately NOT rebuilt
-            let (wish_dir, _heading) = fast_steer_aim(&local_path, &mut local_i, pos, 5.0, |_, _| true)
-                .expect("a bending path within reach must always produce an aim");
+        for _ in 0..15 {
+            // 150ms — exactly one local_path gate, deliberately NOT rebuilt
+            let (wish_dir, _heading) =
+                fast_steer_aim(&local_path, &mut local_i, pos, 5.0, |_, _| true)
+                    .expect("a bending path within reach must always produce an aim");
             // Forward tangent of the segment the cursor is currently tracking — wish_dir must
             // never point backward along it.
-            let (a, b) = (local_path[local_i], local_path.get(local_i + 1).copied().unwrap_or(local_path[local_i]));
+            let (a, b) = (
+                local_path[local_i],
+                local_path
+                    .get(local_i + 1)
+                    .copied()
+                    .unwrap_or(local_path[local_i]),
+            );
             let seg = [b[0] - a[0], b[1] - a[1]];
             let seg_len = (seg[0] * seg[0] + seg[1] * seg[1]).sqrt();
             if seg_len > 1e-3 {
@@ -2697,14 +3181,18 @@ mod tests {
             pos[0] += wish_dir[0] * eqoxide_core::physics::RUN_SPEED * DT;
             pos[1] += wish_dir[1] * eqoxide_core::physics::RUN_SPEED * DT;
         }
-        assert!(min_forward_dot > 0.3,
+        assert!(
+            min_forward_dot > 0.3,
             "fast-steer aim pointed backward along its tracked segment (dot={min_forward_dot:.2}) \
              at some point in the gate — the carrot cursor collapsed/inverted instead of advancing \
-             through the bend (#311)");
+             through the bend (#311)"
+        );
         let travelled = (pos[0] * pos[0] + pos[1] * pos[1]).sqrt();
-        assert!(travelled > 5.0,
+        assert!(
+            travelled > 5.0,
             "walker made almost no net progress over the 150ms gate (ended {travelled:.2}u from \
-             start at {pos:?}) — the cursor likely stalled pinned to segment 0 (#311)");
+             start at {pos:?}) — the cursor likely stalled pinned to segment 0 (#311)"
+        );
     }
 
     /// **Water-nav Slice 3 (§8.2): the depth controller must be able to HOLD a mid-water depth —
@@ -2720,36 +3208,71 @@ mod tests {
     #[test]
     fn swim_vspeed_holds_depth_below_the_plane_and_yields_to_buoyancy_at_it() {
         let plane = Some(-6.0); // surface −4, float_depth 2 → swim plane at −6
-        // Proportional and signed toward the carrot's depth, clamped to ±SWIM_VRATE.
-        assert!(swim_vspeed(-24.0, -20.0, plane) < 0.0, "carrot 4u below the feet → sink (negative)");
-        assert!(swim_vspeed(-24.0, -30.0, plane) > 0.0, "carrot 6u above the feet → rise (positive)");
-        assert_eq!(swim_vspeed(-100.0, -20.0, plane), -SWIM_VRATE, "a big downward error clamps to −SWIM_VRATE");
-        assert_eq!(swim_vspeed(-20.0, -100.0, plane), SWIM_VRATE, "a big upward error clamps to +SWIM_VRATE");
+                                // Proportional and signed toward the carrot's depth, clamped to ±SWIM_VRATE.
+        assert!(
+            swim_vspeed(-24.0, -20.0, plane) < 0.0,
+            "carrot 4u below the feet → sink (negative)"
+        );
+        assert!(
+            swim_vspeed(-24.0, -30.0, plane) > 0.0,
+            "carrot 6u above the feet → rise (positive)"
+        );
+        assert_eq!(
+            swim_vspeed(-100.0, -20.0, plane),
+            -SWIM_VRATE,
+            "a big downward error clamps to −SWIM_VRATE"
+        );
+        assert_eq!(
+            swim_vspeed(-20.0, -100.0, plane),
+            SWIM_VRATE,
+            "a big upward error clamps to +SWIM_VRATE"
+        );
         // An ABOVE-plane entry/haul-out waypoint (toward the surface) must drive an active RISE — the
         // whole reason the up-only rule couldn't be replaced by "0 and let buoyancy do it": buoyancy
         // rests at the plane and never reaches the −4 surface. (Regression: a −4 entry waypoint left
         // the swimmer stuck at the −6 plane, path_i frozen — the first cut of this fix.)
-        assert!(swim_vspeed(-4.0, -6.0, plane) > 0.0, "a surface entry waypoint above the plane → rise toward it");
+        assert!(
+            swim_vspeed(-4.0, -6.0, plane) > 0.0,
+            "a surface entry waypoint above the plane → rise toward it"
+        );
         // THE CRUX (#547): a mid-water hold BELOW the plane must keep a NONZERO wish — a 0 would let
         // buoyancy float the swimmer to the plane (surfacing). At the target the wish is tiny (a hold).
         let hold = swim_vspeed(-24.0, -24.0, plane); // resting exactly at a mid-water goal
-        assert!(hold != 0.0, "a mid-water hold must keep a NONZERO wish so buoyancy stays suppressed \
-            (0 would let the swimmer float to the surface — the #547 bug)");
-        assert!(hold.abs() <= 0.5, "…but at the target the wish is tiny (the SKIN clamp makes it a hold): {hold}");
+        assert!(
+            hold != 0.0,
+            "a mid-water hold must keep a NONZERO wish so buoyancy stays suppressed \
+            (0 would let the swimmer float to the surface — the #547 bug)"
+        );
+        assert!(
+            hold.abs() <= 0.5,
+            "…but at the target the wish is tiny (the SKIN clamp makes it a hold): {hold}"
+        );
         // AT/above the plane, a 0 wish is safe — buoyancy simply rests the swimmer at the plane (the
         // ordinary surface-pool crossing), so no spurious hold nudge there.
-        assert_eq!(swim_vspeed(-6.0, -6.0, plane), 0.0, "resting AT the plane → 0 (buoyancy rests here)");
+        assert_eq!(
+            swim_vspeed(-6.0, -6.0, plane),
+            0.0,
+            "resting AT the plane → 0 (buoyancy rests here)"
+        );
         // No bounded surface (open/unbounded water): buoyancy can't act, so a 0 hold is safe there too.
-        assert_eq!(swim_vspeed(-50.0, -50.0, None), 0.0, "no surface → 0 is a safe hold (buoyancy inert)");
-        assert!(swim_vspeed(-40.0, -50.0, None) > 0.0 && swim_vspeed(-60.0, -50.0, None) < 0.0,
-            "no surface → still signed toward the carrot");
+        assert_eq!(
+            swim_vspeed(-50.0, -50.0, None),
+            0.0,
+            "no surface → 0 is a safe hold (buoyancy inert)"
+        );
+        assert!(
+            swim_vspeed(-40.0, -50.0, None) > 0.0 && swim_vspeed(-60.0, -50.0, None) < 0.0,
+            "no surface → still signed toward the carrot"
+        );
     }
 
     /// Standard sign-of-orientation segment crossing (proper crossings only; collinear touching is
     /// treated as non-crossing, which is fine for the corner scenes below). Pure 2D, for the analytic
     /// LOS closures — the Collision-backed pin lives in `collision.rs` (`los_clamp_rounds_a_baked_l_corner`).
     fn segments_cross(p: [f32; 2], p2: [f32; 2], q: [f32; 2], q2: [f32; 2]) -> bool {
-        let o = |a: [f32; 2], b: [f32; 2], c: [f32; 2]| (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+        let o = |a: [f32; 2], b: [f32; 2], c: [f32; 2]| {
+            (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        };
         let (d1, d2) = (o(q, q2, p), o(q, q2, p2));
         let (d3, d4) = (o(p, p2, q), o(p, p2, q2));
         ((d1 > 0.0) != (d2 > 0.0)) && ((d3 > 0.0) != (d4 > 0.0))
@@ -2789,9 +3312,11 @@ mod tests {
              the corner. MUTATION: ignore `los` in carrot_along_los and this goes RED.");
         // Anti-crawl: the clamp shortens toward the corner, it does not retreat behind the walker.
         let ahead = (clamped[0] - from[0]).hypot(clamped[1] - from[1]);
-        assert!(ahead >= 4.0,
+        assert!(
+            ahead >= 4.0,
             "the clamped carrot {clamped:?} must still lead the walker forward toward the corner \
-             (ahead={ahead:.1}u) — the clamp rounds the corner, it must never crawl in place");
+             (ahead={ahead:.1}u) — the clamp rounds the corner, it must never crawl in place"
+        );
         assert!(clamped[0] <= 10.0 + 1e-3 && clamped[1] <= 1.0 + 1e-3,
             "the clamped carrot {clamped:?} should rest at/behind the corner vertex (10,0), not up the far leg");
     }
@@ -2801,7 +3326,12 @@ mod tests {
     /// the full LOOK_AHEAD is kept, so straight/gently-curving routes are unchanged and never slow.
     #[test]
     fn los_clamp_keeps_full_reach_on_a_clear_path() {
-        let path: Vec<[f32; 3]> = vec![[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [20.0, 0.0, 0.0], [30.0, 0.0, 0.0]];
+        let path: Vec<[f32; 3]> = vec![
+            [0.0, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [20.0, 0.0, 0.0],
+            [30.0, 0.0, 0.0],
+        ];
         for &from in &[[0.0f32, 0.0, 0.0], [3.0, 0.0, 0.0], [12.0, 0.0, 0.0]] {
             for &reach in &[5.0f32, 12.0, 24.0] {
                 let plain = carrot_along(&path, 0, from, reach).unwrap();
@@ -2822,11 +3352,27 @@ mod tests {
         let from = [4.0, 0.0, 0.0];
         let blocked = |_: [f32; 3], _: [f32; 3]| false;
         let c = carrot_along_los(&path, 0, from, 10.0, blocked).expect("must still return an aim");
-        assert!(c.iter().all(|v| v.is_finite()), "aim must be finite even with all LOS blocked: {c:?}");
+        assert!(
+            c.iter().all(|v| v.is_finite()),
+            "aim must be finite even with all LOS blocked: {c:?}"
+        );
         let mut li = 0usize;
-        let aim = steer_target(&path, 0, &path, &mut li,
-            SteeringContext { from, look_ahead: 5.0, fallback: [0.0, 0.0, 0.0] }, blocked);
-        assert!(aim.iter().all(|v| v.is_finite()), "steer_target must stay total under a blocking los: {aim:?}");
+        let aim = steer_target(
+            &path,
+            0,
+            &path,
+            &mut li,
+            SteeringContext {
+                from,
+                look_ahead: 5.0,
+                fallback: [0.0, 0.0, 0.0],
+            },
+            blocked,
+        );
+        assert!(
+            aim.iter().all(|v| v.is_finite()),
+            "steer_target must stay total under a blocking los: {aim:?}"
+        );
     }
 
     /// **#631 gap 2: horizontal goal re-anchoring is DISCLOSED, and the vertical case is not it.**
@@ -2843,15 +3389,24 @@ mod tests {
     fn route_goal_offset_reports_horizontal_shortfall_only() {
         // A COMPLETE route ends exactly at the requested XY (collision.rs snaps the final waypoint to
         // goal.xy): 0 offset, whatever the z — no false positive on a real route to the goal.
-        assert_eq!(route_goal_offset(Some([10.0, 20.0, 5.0]), [10.0, 20.0, -3.0]), 0.0,
-            "a route ending at the goal XY is not re-anchored, regardless of its z");
+        assert_eq!(
+            route_goal_offset(Some([10.0, 20.0, 5.0]), [10.0, 20.0, -3.0]),
+            0.0,
+            "a route ending at the goal XY is not re-anchored, regardless of its z"
+        );
         // The #482 shape: committed endpoint 55u (horizontally) from the named goal.
         let off = route_goal_offset(Some([-607.1, -66.1, -7.0]), [-601.0, -121.0, -8.7]);
-        assert!((off - 55.24).abs() < 0.5, "the ~55u horizontal shortfall must be surfaced: {off}");
+        assert!(
+            (off - 55.24).abs() < 0.5,
+            "the ~55u horizontal shortfall must be surfaced: {off}"
+        );
         // A pure Z difference is NOT a horizontal re-anchoring — that is `goal_snapped`'s job, and
         // double-reporting it here would be a second, confusing signal for the same fact.
-        assert_eq!(route_goal_offset(Some([0.0, 0.0, 100.0]), [0.0, 0.0, 0.0]), 0.0,
-            "a vertical-only difference is goal_snapped's channel, not a horizontal offset");
+        assert_eq!(
+            route_goal_offset(Some([0.0, 0.0, 100.0]), [0.0, 0.0, 0.0]),
+            0.0,
+            "a vertical-only difference is goal_snapped's channel, not a horizontal offset"
+        );
         // A DEFINITIVE no-route is not a re-anchoring — there is no committed destination to disclose.
         assert_eq!(route_goal_offset(None, [1.0, 2.0, 3.0]), 0.0);
     }
@@ -2930,23 +3485,44 @@ mod tests {
                     "an `Advancing` verdict must never hold {quiet_ticks} >= NAV_STUCK_TICKS quiet ticks");
                 e
             }
-            RouteExecution::Stalled { quiet_ticks, repaths } =>
-                RouteExecution::Stalled { quiet_ticks: quiet_ticks.min(NAV_STUCK_TICKS), repaths },
+            RouteExecution::Stalled {
+                quiet_ticks,
+                repaths,
+            } => RouteExecution::Stalled {
+                quiet_ticks: quiet_ticks.min(NAV_STUCK_TICKS),
+                repaths,
+            },
         };
         // The input alphabet. `repaths` is modelled as {0, 1, 8} — never re-pathed, mid-recovery,
         // and at the walker's give-up cap — because it is carried into the verdict, and a machine
         // that (wrongly) reset on a re-path must have a re-path to reset on.
-        let inputs: Vec<(bool, u32)> = [false, true].iter()
-            .flat_map(|&p| [0u32, 1, 8].iter().map(move |&r| (p, r))).collect();
+        let inputs: Vec<(bool, u32)> = [false, true]
+            .iter()
+            .flat_map(|&p| [0u32, 1, 8].iter().map(move |&r| (p, r)))
+            .collect();
 
         // ── The two bisimulation premises, CHECKED (see the doc above) ────────────────────────
         // 1. the published word does not depend on `quiet_ticks`…
         for &r in &routes {
-            let word_ignores_quiet_ticks = (NAV_STUCK_TICKS..NAV_STUCK_TICKS + 50).all(|q|
-                driving_nav_state(r, RouteExecution::Stalled { quiet_ticks: q, repaths: 3 })
-                    == driving_nav_state(r, RouteExecution::Stalled { quiet_ticks: NAV_STUCK_TICKS, repaths: 3 }));
-            assert!(word_ignores_quiet_ticks,
-                "the quotient below is unsound: `driving_nav_state` reads `quiet_ticks`");
+            let word_ignores_quiet_ticks = (NAV_STUCK_TICKS..NAV_STUCK_TICKS + 50).all(|q| {
+                driving_nav_state(
+                    r,
+                    RouteExecution::Stalled {
+                        quiet_ticks: q,
+                        repaths: 3,
+                    },
+                ) == driving_nav_state(
+                    r,
+                    RouteExecution::Stalled {
+                        quiet_ticks: NAV_STUCK_TICKS,
+                        repaths: 3,
+                    },
+                )
+            });
+            assert!(
+                word_ignores_quiet_ticks,
+                "the quotient below is unsound: `driving_nav_state` reads `quiet_ticks`"
+            );
         }
         // 2. …and the TRANSITION, once stalled, lands two capped-identical states on the SAME capped
         //    successor — for every input, not merely on the same `is_stalled()` answer.
@@ -2975,10 +3551,16 @@ mod tests {
         //        about the cap being SOUND, not about the flip being in the right place.
         for q in NAV_STUCK_TICKS..NAV_STUCK_TICKS + 50 {
             for (progressed, repaths) in inputs.iter().copied() {
-                let from_q   = cap(RouteExecution::Stalled { quiet_ticks: q, repaths: 3 }
-                                    .tick(progressed, repaths));
-                let from_cap = cap(RouteExecution::Stalled { quiet_ticks: NAV_STUCK_TICKS, repaths: 3 }
-                                    .tick(progressed, repaths));
+                let from_q = cap(RouteExecution::Stalled {
+                    quiet_ticks: q,
+                    repaths: 3,
+                }
+                .tick(progressed, repaths));
+                let from_cap = cap(RouteExecution::Stalled {
+                    quiet_ticks: NAV_STUCK_TICKS,
+                    repaths: 3,
+                }
+                .tick(progressed, repaths));
                 assert_eq!(from_q, from_cap,
                     "the quotient below is unsound: `tick` branches on the exact `quiet_ticks` ({q}) \
                      — capped successors differ under (progressed={progressed}, repaths={repaths})");
@@ -2999,14 +3581,18 @@ mod tests {
 
         while let Some((exec, quiet)) = queue.pop() {
             visited += 1;
-            if quiet >= oracle_cap { reached_saturation = true; }
+            if quiet >= oracle_cap {
+                reached_saturation = true;
+            }
             for route in routes {
                 let word = driving_nav_state(route, exec);
                 words.insert(word);
                 // THE UNIVERSAL, stated over the ORACLE.
                 if quiet >= NAV_STUCK_TICKS {
-                    assert_ne!(word, NAV_STATE_NAVIGATING,
-                        "#851: published `navigating` after {quiet} quiet ticks (verdict {exec:?})");
+                    assert_ne!(
+                        word, NAV_STATE_NAVIGATING,
+                        "#851: published `navigating` after {quiet} quiet ticks (verdict {exec:?})"
+                    );
                     assert_ne!(word, NAV_STATE_NAVIGATING_PARTIAL,
                         "#851: published `navigating_partial` after {quiet} quiet ticks (verdict {exec:?})");
                 }
@@ -3014,15 +3600,28 @@ mod tests {
                 // stalled WORD may only come from a stalled VERDICT, and a stalled verdict may never
                 // coexist with an oracle that has just seen real progress.
                 if word == NAV_STATE_NAVIGATING_STALLED {
-                    assert!(exec.is_stalled(), "the stalled WORD must come from a stalled VERDICT");
+                    assert!(
+                        exec.is_stalled(),
+                        "the stalled WORD must come from a stalled VERDICT"
+                    );
                 }
-                assert!(!(exec.is_stalled() && quiet == 0),
-                    "#851: the verdict must clear the instant real progress is made (quiet=0)");
+                assert!(
+                    !(exec.is_stalled() && quiet == 0),
+                    "#851: the verdict must clear the instant real progress is made (quiet=0)"
+                );
             }
             for (progressed, repaths) in inputs.iter().copied() {
-                let next = (cap(exec.tick(progressed, repaths)),
-                            if progressed { 0 } else { (quiet + 1).min(oracle_cap) });
-                if seen.insert(next) { queue.push(next); }
+                let next = (
+                    cap(exec.tick(progressed, repaths)),
+                    if progressed {
+                        0
+                    } else {
+                        (quiet + 1).min(oracle_cap)
+                    },
+                );
+                if seen.insert(next) {
+                    queue.push(next);
+                }
             }
         }
 
@@ -3031,12 +3630,20 @@ mod tests {
             "the model check never reached {oracle_cap} quiet ticks — the invariant above was checked \
              only where it is trivially true (visited {visited} states)");
         // CONTROL 2 (COUNTING): the reachable set is at least one state per tick up to the threshold.
-        assert!(visited > NAV_STUCK_TICKS as usize,
-            "the reachable product collapsed to {visited} states — the machine is not counting");
+        assert!(
+            visited > NAV_STUCK_TICKS as usize,
+            "the reachable product collapsed to {visited} states — the machine is not counting"
+        );
         // CONTROL 3 (NON-DEGENERACY): all three driving words are genuinely produced.
-        for w in [NAV_STATE_NAVIGATING, NAV_STATE_NAVIGATING_PARTIAL, NAV_STATE_NAVIGATING_STALLED] {
-            assert!(words.contains(w),
-                "`{w}` is never produced anywhere in the reachable set — the invariant is vacuous");
+        for w in [
+            NAV_STATE_NAVIGATING,
+            NAV_STATE_NAVIGATING_PARTIAL,
+            NAV_STATE_NAVIGATING_STALLED,
+        ] {
+            assert!(
+                words.contains(w),
+                "`{w}` is never produced anywhere in the reachable set — the invariant is vacuous"
+            );
         }
     }
 
@@ -3055,13 +3662,25 @@ mod tests {
             assert!(!exec.is_stalled(),
                 "flipped at tick {i}, before the walker's own {NAV_STUCK_TICKS}-tick stall line — a \
                  brief wall-slide would be reported as a wedge");
-            assert_eq!(driving_nav_state(CommittedRoute::Complete, exec), NAV_STATE_NAVIGATING);
+            assert_eq!(
+                driving_nav_state(CommittedRoute::Complete, exec),
+                NAV_STATE_NAVIGATING
+            );
         }
         exec = exec.tick(false, 0);
-        assert_eq!(exec, RouteExecution::Stalled { quiet_ticks: NAV_STUCK_TICKS, repaths: 0 },
+        assert_eq!(
+            exec,
+            RouteExecution::Stalled {
+                quiet_ticks: NAV_STUCK_TICKS,
+                repaths: 0
+            },
             "the verdict must flip exactly at NAV_STUCK_TICKS (~{}s at the 150ms nav tick)",
-            NAV_STUCK_TICKS * 150 / 1000);
-        assert_eq!(driving_nav_state(CommittedRoute::Complete, exec), NAV_STATE_NAVIGATING_STALLED);
+            NAV_STUCK_TICKS * 150 / 1000
+        );
+        assert_eq!(
+            driving_nav_state(CommittedRoute::Complete, exec),
+            NAV_STATE_NAVIGATING_STALLED
+        );
         assert_eq!(driving_nav_state(CommittedRoute::Partial,  exec), NAV_STATE_NAVIGATING_STALLED,
             "a stalled PARTIAL is not `navigating_partial` either — that word is a progress claim too");
 
@@ -3070,13 +3689,23 @@ mod tests {
         for repaths in 1..=8u32 {
             for _ in 0..(NAV_STUCK_TICKS + NAV_BACKOFF_TICKS) {
                 exec = exec.tick(false, repaths);
-                assert!(exec.is_stalled(), "re-path {repaths} laundered the stall into progress");
+                assert!(
+                    exec.is_stalled(),
+                    "re-path {repaths} laundered the stall into progress"
+                );
             }
         }
         // …and REAL progress clears it on the very next tick.
         exec = exec.tick(true, 8);
-        assert_eq!(exec, RouteExecution::fresh(), "real progress must clear the verdict immediately");
-        assert_eq!(driving_nav_state(CommittedRoute::Complete, exec), NAV_STATE_NAVIGATING);
+        assert_eq!(
+            exec,
+            RouteExecution::fresh(),
+            "real progress must clear the verdict immediately"
+        );
+        assert_eq!(
+            driving_nav_state(CommittedRoute::Complete, exec),
+            NAV_STATE_NAVIGATING
+        );
     }
 
     /// **A verdict about one goal is not evidence about another (#851 review round 2, B1) — the
@@ -3095,25 +3724,49 @@ mod tests {
     fn a_goal_verdict_is_only_evidence_about_its_own_goal_851() {
         // Wedge goal #1 all the way to the latch.
         let mut v = GoalVerdict::fresh_for(1);
-        for _ in 0..NAV_STUCK_TICKS { v = v.tick(1, false, 3); }
-        assert!(v.as_of(1).is_stalled(), "PREMISE: goal #1 really is latched stalled");
-        assert_eq!(driving_nav_state(CommittedRoute::Complete, v.as_of(1)),
-            NAV_STATE_NAVIGATING_STALLED, "and it publishes as such for its OWN goal");
+        for _ in 0..NAV_STUCK_TICKS {
+            v = v.tick(1, false, 3);
+        }
+        assert!(
+            v.as_of(1).is_stalled(),
+            "PREMISE: goal #1 really is latched stalled"
+        );
+        assert_eq!(
+            driving_nav_state(CommittedRoute::Complete, v.as_of(1)),
+            NAV_STATE_NAVIGATING_STALLED,
+            "and it publishes as such for its OWN goal"
+        );
 
         // The same value, read for a DIFFERENT goal, is not evidence of anything about that goal.
-        assert!(!v.as_of(2).is_stalled(),
-            "#851 B1: goal #1's wedge must not be readable as goal #2's verdict");
-        assert_eq!(v.as_of(2), RouteExecution::fresh(),
-            "…and what it reads instead is the honest 'nothing observed on this journey yet'");
-        assert_eq!(driving_nav_state(CommittedRoute::Complete, v.as_of(2)), NAV_STATE_NAVIGATING);
-        assert!(v.is_about(1) && !v.is_about(2), "the verdict names which journey it is about");
+        assert!(
+            !v.as_of(2).is_stalled(),
+            "#851 B1: goal #1's wedge must not be readable as goal #2's verdict"
+        );
+        assert_eq!(
+            v.as_of(2),
+            RouteExecution::fresh(),
+            "…and what it reads instead is the honest 'nothing observed on this journey yet'"
+        );
+        assert_eq!(
+            driving_nav_state(CommittedRoute::Complete, v.as_of(2)),
+            NAV_STATE_NAVIGATING
+        );
+        assert!(
+            v.is_about(1) && !v.is_about(2),
+            "the verdict names which journey it is about"
+        );
 
         // Ticking for a new goal starts THAT goal's count — it does not continue goal #1's.
         let v2 = v.tick(2, false, 0);
-        assert_eq!(v2.as_of(2), RouteExecution::Advancing { quiet_ticks: 1 },
-            "#851 B1: goal #2's first quiet tick is its FIRST, not goal #1's twenty-first");
-        assert!(!v2.as_of(1).is_stalled(),
-            "…and goal #1's verdict is gone, not shadowed — it is one value, not two");
+        assert_eq!(
+            v2.as_of(2),
+            RouteExecution::Advancing { quiet_ticks: 1 },
+            "#851 B1: goal #2's first quiet tick is its FIRST, not goal #1's twenty-first"
+        );
+        assert!(
+            !v2.as_of(1).is_stalled(),
+            "…and goal #1's verdict is gone, not shadowed — it is one value, not two"
+        );
     }
 
     /// **#631 gap 3: the no-progress property — TERMINATE a lap that never closes on the goal, and
@@ -3151,29 +3804,47 @@ mod tests {
         // CIRCLING (the moat): constant distance forever. Best is set on the first sample and never
         // improves, so it MUST terminate — right at the window, not before, not never.
         let circling: Vec<(f32, f32)> = (0..80).map(|i| (i as f32 * 5.0, 60.0)).collect();
-        let fired = fires_at(&circling).expect("a lap that never closes on the goal MUST terminate");
-        assert!((fired - win).abs() <= 5.0 + 1e-3,
-            "the moat must terminate at ~{win}s (the window), got {fired}s");
+        let fired =
+            fires_at(&circling).expect("a lap that never closes on the goal MUST terminate");
+        assert!(
+            (fired - win).abs() <= 5.0 + 1e-3,
+            "the moat must terminate at ~{win}s (the window), got {fired}s"
+        );
 
         // STEADILY APPROACHING (even SLOWLY): distance falls by >EPS within every window. A very slow
         // 0.4 u/s crawl (12u per 30s > the 8u EPS) still resets the clock each step — never killed.
-        let slow: Vec<(f32, f32)> = (0..40).map(|i| (i as f32 * 30.0, 500.0 - i as f32 * 12.0)).collect();
-        assert_eq!(fires_at(&slow), None,
-            "a slow-but-steady approach keeps improving closest-approach — it must NEVER be killed");
+        let slow: Vec<(f32, f32)> = (0..40)
+            .map(|i| (i as f32 * 30.0, 500.0 - i as f32 * 12.0))
+            .collect();
+        assert_eq!(
+            fires_at(&slow),
+            None,
+            "a slow-but-steady approach keeps improving closest-approach — it must NEVER be killed"
+        );
 
         // A NECESSARY DETOUR that first goes AWAY (distance rises for ~25s) then closes. Best stays
         // flat during the away-leg but the clock has NOT yet run out, and the approach then resets it
         // well within the window — the detour survives. (This is the exact false-positive the issue
         // warns about: a route that temporarily increases distance must not be killed.)
         let mut detour: Vec<(f32, f32)> = Vec::new();
-        for i in 0..6 { detour.push((i as f32 * 5.0, 100.0 + i as f32 * 12.0)); } // away 0..25s: 100→160
-        for i in 1..20 { detour.push((25.0 + i as f32 * 5.0, 160.0 - i as f32 * 15.0)); } // back, brisk
+        for i in 0..6 {
+            detour.push((i as f32 * 5.0, 100.0 + i as f32 * 12.0));
+        } // away 0..25s: 100→160
+        for i in 1..20 {
+            detour.push((25.0 + i as f32 * 5.0, 160.0 - i as f32 * 15.0));
+        } // back, brisk
         assert_eq!(fires_at(&detour), None,
             "a detour that temporarily increases distance then closes must survive — killing it is \
              the over-firing #631 explicitly forbids");
 
         // A LONG STRAIGHT RUN: monotone decrease over minutes. Never fires (improves every sample).
-        let straight: Vec<(f32, f32)> = (0..60).map(|i| (i as f32 * 5.0, 3000.0 - i as f32 * 44.0)).collect();
-        assert_eq!(fires_at(&straight), None, "a long straight run keeps closing — never killed");
+        let straight: Vec<(f32, f32)> = (0..60)
+            .map(|i| (i as f32 * 5.0, 3000.0 - i as f32 * 44.0))
+            .collect();
+        assert_eq!(
+            fires_at(&straight),
+            None,
+            "a long straight run keeps closing — never killed"
+        );
     }
 }

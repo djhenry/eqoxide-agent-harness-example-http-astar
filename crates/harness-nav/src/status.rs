@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 
 /// A goal is finished for good in one of these states; anything else asserts work in flight and is
 /// retired to `idle` once no goal justifies it.
-pub const TERMINAL_NAV_STATES: [&str; 5] = ["idle", "arrived", "no_path", "search_exhausted", "blocked"];
+pub const TERMINAL_NAV_STATES: [&str; 5] =
+    ["idle", "arrived", "no_path", "search_exhausted", "blocked"];
 
 pub fn nav_state_is_terminal(state: &str) -> bool {
     TERMINAL_NAV_STATES.contains(&state)
@@ -78,8 +79,16 @@ pub struct NavStatus {
 impl Default for NavStatus {
     fn default() -> Self {
         NavStatus {
-            state: "idle".into(), reason: None, goal_id: 0, goal: None, blocked_goal: None,
-            blocked_frontier: None, tier: None, local: None, stall: None, local_planner_dead: false,
+            state: "idle".into(),
+            reason: None,
+            goal_id: 0,
+            goal: None,
+            blocked_goal: None,
+            blocked_frontier: None,
+            tier: None,
+            local: None,
+            stall: None,
+            local_planner_dead: false,
         }
     }
 }
@@ -100,7 +109,10 @@ impl NavStatus {
     /// Move to a new word for the same goal. Per-route facts (tier, stall, blockage) belong to the
     /// previous word and are cleared; the goal and the fine planner's verdict carry over.
     pub fn transition_within_goal(&mut self, state: &str, why: Option<&str>) {
-        debug_assert!(state != "idle", "`idle` retires the goal: use retire_to_idle");
+        debug_assert!(
+            state != "idle",
+            "`idle` retires the goal: use retire_to_idle"
+        );
         self.state = state.into();
         self.reason = why.map(str::to_string);
         self.blocked_goal = None;
@@ -130,7 +142,10 @@ pub struct AggroAvoidOpts {
 
 impl Default for AggroAvoidOpts {
     fn default() -> Self {
-        Self { enabled: true, buffer: 0.0 }
+        Self {
+            enabled: true,
+            buffer: 0.0,
+        }
     }
 }
 

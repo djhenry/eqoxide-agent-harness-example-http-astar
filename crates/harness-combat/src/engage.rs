@@ -37,23 +37,51 @@ mod tests {
     fn obs(target: Option<VisibleEntity>) -> Observation {
         Observation {
             own: OwnState {
-                pos: [0.0, 0.0, 0.0], heading: 0.0, hp: 100, hp_max: 100, hp_verified: true,
-                mana: 0, mana_max: 0, endurance: 0, endurance_max: 0, endurance_confirmed: true,
-                casting: None, buffs: vec![], zone_name: "qeynos".into(),
-                target_id: target.as_ref().map(|t| t.spawn_id), target_name: None,
-                auto_attack: true, sitting: false, held: false,
-                player_class: "Warrior".into(), player_level: 1,
+                pos: [0.0, 0.0, 0.0],
+                heading: 0.0,
+                hp: 100,
+                hp_max: 100,
+                hp_verified: true,
+                mana: 0,
+                mana_max: 0,
+                endurance: 0,
+                endurance_max: 0,
+                endurance_confirmed: true,
+                casting: None,
+                buffs: vec![],
+                zone_name: "qeynos".into(),
+                target_id: target.as_ref().map(|t| t.spawn_id),
+                target_name: None,
+                auto_attack: true,
+                sitting: false,
+                held: false,
+                player_class: "Warrior".into(),
+                player_level: 1,
             },
             visible: target.into_iter().collect(),
-            legal_actions: LegalActionMask { gems: [false; 9], abilities: vec![] },
-            dead: false, terminated: false, truncated: false, visibility_available: true, tick: 0,
+            legal_actions: LegalActionMask {
+                gems: [false; 9],
+                abilities: vec![],
+            },
+            dead: false,
+            terminated: false,
+            truncated: false,
+            visibility_available: true,
+            tick: 0,
         }
     }
 
     fn rat(pos: [f32; 3]) -> VisibleEntity {
         VisibleEntity {
-            spawn_id: 7, name: "a_rat00".into(), is_npc: true, level: 1, race: "Rat".into(),
-            pos, heading: 0.0, hp_pct: 100.0, dead: false,
+            spawn_id: 7,
+            name: "a_rat00".into(),
+            is_npc: true,
+            level: 1,
+            race: "Rat".into(),
+            pos,
+            heading: 0.0,
+            hp_pct: 100.0,
+            dead: false,
         }
     }
 

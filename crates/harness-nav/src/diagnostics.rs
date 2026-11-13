@@ -191,21 +191,33 @@ impl SearchTrace {
     /// the second (deciding) call always has at least half the pool available — the same shape as
     /// `generous_node_cap`'s slice of the node budget.
     pub fn with_budget(budget: usize) -> Self {
-        SearchTrace { budget, call_cap: (budget / 2).max(1), ..Default::default() }
+        SearchTrace {
+            budget,
+            call_cap: (budget / 2).max(1),
+            ..Default::default()
+        }
     }
 
     /// Open a new per-call record. Called by `astar` at entry (so even a call that evaluates
     /// nothing — `NoGeometry`, an immediately-unwalkable goal — leaves an honest empty record).
     pub fn begin_call(&mut self, clearance: f32, cell: f32, char_anchor: bool) {
         self.cur_call_edges = 0;
-        self.calls.push(CallTrace { clearance, cell, char_anchor, truncated: false, edges: Vec::new() });
+        self.calls.push(CallTrace {
+            clearance,
+            cell,
+            char_anchor,
+            truncated: false,
+            edges: Vec::new(),
+        });
     }
 
     /// Record one edge verdict into the current call, honoring the plan-wide budget AND the
     /// per-call cap (see [`SearchTrace::with_budget`]).
     #[inline]
     pub fn edge(&mut self, from: [f32; 3], to: [f32; 3], verdict: EdgeVerdict) {
-        let Some(call) = self.calls.last_mut() else { return };
+        let Some(call) = self.calls.last_mut() else {
+            return;
+        };
         if self.budget == 0 || self.cur_call_edges >= self.call_cap {
             call.truncated = true;
             return;
@@ -389,10 +401,18 @@ pub enum PadKnowledge {
     /// type carries the contract): a contradicting observation or a zone-geometry change resets
     /// the entry to `Unknown` — a stale learned value presented as fact is worse than the
     /// original unverifiable guess.
-    LearnedSameZone { dest: [f32; 3], observations: u32, last_observed_ms: u64 },
+    LearnedSameZone {
+        dest: [f32; 3],
+        observations: u32,
+        last_observed_ms: u64,
+    },
     /// Reserved for the #543 learning loop: observed to actually cross zones. Same provenance +
     /// invalidation contract as [`PadKnowledge::LearnedSameZone`].
-    LearnedCrossZone { target_zone: u16, observations: u32, last_observed_ms: u64 },
+    LearnedCrossZone {
+        target_zone: u16,
+        observations: u32,
+        last_observed_ms: u64,
+    },
 }
 
 /// One pad's knowledge state, keyed by its DRNTP zone-point index.
@@ -486,22 +506,65 @@ mod tests {
         let mut t = SearchTrace::with_budget(4);
         t.begin_call(2.0, 8.0, true); // "the generous flood"
         for i in 0..10 {
-            t.edge([0.0; 3], [i as f32; 3], EdgeVerdict::Accepted { kind: EdgeKind::Walk });
+            t.edge(
+                [0.0; 3],
+                [i as f32; 3],
+                EdgeVerdict::Accepted {
+                    kind: EdgeKind::Walk,
+                },
+            );
         }
-        assert_eq!(t.calls[0].edges.len(), 2,
-            "a single call may consume at most HALF the budget — the F3 reserve");
-        assert!(t.calls[0].truncated, "hitting the per-call cap must be explicit");
+        assert_eq!(
+            t.calls[0].edges.len(),
+            2,
+            "a single call may consume at most HALF the budget — the F3 reserve"
+        );
+        assert!(
+            t.calls[0].truncated,
+            "hitting the per-call cap must be explicit"
+        );
 
         t.begin_call(1.0, 8.0, false); // "the deciding minimum pass"
-        t.edge([0.0; 3], [20.0; 3], EdgeVerdict::Rejected { reason: RejectReason::Clearance });
-        t.edge([0.0; 3], [21.0; 3], EdgeVerdict::Accepted { kind: EdgeKind::Walk });
-        assert_eq!(t.calls[1].edges.len(), 2,
-            "the deciding call must still have its reserved half of the budget");
+        t.edge(
+            [0.0; 3],
+            [20.0; 3],
+            EdgeVerdict::Rejected {
+                reason: RejectReason::Clearance,
+            },
+        );
+        t.edge(
+            [0.0; 3],
+            [21.0; 3],
+            EdgeVerdict::Accepted {
+                kind: EdgeKind::Walk,
+            },
+        );
+        assert_eq!(
+            t.calls[1].edges.len(),
+            2,
+            "the deciding call must still have its reserved half of the budget"
+        );
         // Global budget (4) now exhausted: further records refuse, explicitly.
-        t.edge([0.0; 3], [22.0; 3], EdgeVerdict::Accepted { kind: EdgeKind::Walk });
-        assert_eq!(t.edge_count(), 4, "the global budget still bounds the total");
-        assert!(t.calls[1].truncated, "the call that hit the global cap must say so — silence would be a gap that lies");
-        assert!(t.truncated(), "the whole-trace flag consumers must surface (F2)");
+        t.edge(
+            [0.0; 3],
+            [22.0; 3],
+            EdgeVerdict::Accepted {
+                kind: EdgeKind::Walk,
+            },
+        );
+        assert_eq!(
+            t.edge_count(),
+            4,
+            "the global budget still bounds the total"
+        );
+        assert!(
+            t.calls[1].truncated,
+            "the call that hit the global cap must say so — silence would be a gap that lies"
+        );
+        assert!(
+            t.truncated(),
+            "the whole-trace flag consumers must surface (F2)"
+        );
     }
 
     /// The JSON encoding of a verdict is the tagged form consumers rely on ("verdict" +
@@ -509,15 +572,23 @@ mod tests {
     #[test]
     fn edge_verdict_serializes_tagged() {
         let acc = serde_json::to_value(EdgeEval {
-            from: [1.0, 2.0, 3.0], to: [4.0, 5.0, 6.0],
-            verdict: EdgeVerdict::Accepted { kind: EdgeKind::Walk },
-        }).unwrap();
+            from: [1.0, 2.0, 3.0],
+            to: [4.0, 5.0, 6.0],
+            verdict: EdgeVerdict::Accepted {
+                kind: EdgeKind::Walk,
+            },
+        })
+        .unwrap();
         assert_eq!(acc["verdict"], "accepted");
         assert_eq!(acc["kind"], "walk");
         let rej = serde_json::to_value(EdgeEval {
-            from: [0.0; 3], to: [0.0; 3],
-            verdict: EdgeVerdict::Rejected { reason: RejectReason::StepUp },
-        }).unwrap();
+            from: [0.0; 3],
+            to: [0.0; 3],
+            verdict: EdgeVerdict::Rejected {
+                reason: RejectReason::StepUp,
+            },
+        })
+        .unwrap();
         assert_eq!(rej["verdict"], "rejected");
         assert_eq!(rej["reason"], "step_up");
     }
@@ -528,20 +599,47 @@ mod tests {
     fn pad_unknown_is_distinct_from_advertised_and_learned() {
         let states = [
             PadKnowledge::Unknown,
-            PadKnowledge::AdvertisedUsable { source: [0.0; 3], dest: [1.0; 3] },
+            PadKnowledge::AdvertisedUsable {
+                source: [0.0; 3],
+                dest: [1.0; 3],
+            },
             PadKnowledge::AdvertisedUnusable,
-            PadKnowledge::LearnedSameZone { dest: [1.0; 3], observations: 1, last_observed_ms: 1_700_000_000_000 },
-            PadKnowledge::LearnedCrossZone { target_zone: 2, observations: 1, last_observed_ms: 1_700_000_000_000 },
+            PadKnowledge::LearnedSameZone {
+                dest: [1.0; 3],
+                observations: 1,
+                last_observed_ms: 1_700_000_000_000,
+            },
+            PadKnowledge::LearnedCrossZone {
+                target_zone: 2,
+                observations: 1,
+                last_observed_ms: 1_700_000_000_000,
+            },
         ];
-        let tags: Vec<String> = states.iter()
-            .map(|k| serde_json::to_value(k).unwrap()["knowledge"].as_str().unwrap().to_string())
+        let tags: Vec<String> = states
+            .iter()
+            .map(|k| {
+                serde_json::to_value(k).unwrap()["knowledge"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
             .collect();
         let unique: std::collections::HashSet<&String> = tags.iter().collect();
-        assert_eq!(unique.len(), states.len(), "every knowledge state must be distinguishable: {tags:?}");
+        assert_eq!(
+            unique.len(),
+            states.len(),
+            "every knowledge state must be distinguishable: {tags:?}"
+        );
         assert!(tags.contains(&"unknown".to_string()));
         // #607 §3: learned facts carry their PROVENANCE on the wire, from day one.
         let learned = serde_json::to_value(&states[3]).unwrap();
-        assert_eq!(learned["observations"], 1, "a learned fact must say how often it was observed");
-        assert!(learned["last_observed_ms"].is_u64(), "…and when it was last observed");
+        assert_eq!(
+            learned["observations"], 1,
+            "a learned fact must say how often it was observed"
+        );
+        assert!(
+            learned["last_observed_ms"].is_u64(),
+            "…and when it was last observed"
+        );
     }
 }

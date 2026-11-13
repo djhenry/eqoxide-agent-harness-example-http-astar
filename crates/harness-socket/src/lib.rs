@@ -66,7 +66,11 @@ impl AgentClient {
         let stream = UnixStream::connect(path)?;
         let writer = stream.try_clone()?;
         let reader = BufReader::new(stream);
-        let mut client = AgentClient { writer, reader, asset_cache_dir: PathBuf::new() };
+        let mut client = AgentClient {
+            writer,
+            reader,
+            asset_cache_dir: PathBuf::new(),
+        };
         client.asset_cache_dir = client.handshake()?;
         Ok(client)
     }
@@ -184,7 +188,13 @@ mod tests {
             reader.read_line(&mut line).unwrap();
             let _hello: Hello = decode_line(&line).unwrap();
             writer
-                .write_all(encode_line(&HandshakeReply::Accepted { asset_cache_dir: "/cache/models".into() }).unwrap().as_bytes())
+                .write_all(
+                    encode_line(&HandshakeReply::Accepted {
+                        asset_cache_dir: "/cache/models".into(),
+                    })
+                    .unwrap()
+                    .as_bytes(),
+                )
                 .unwrap();
 
             let mut step_line = String::new();
