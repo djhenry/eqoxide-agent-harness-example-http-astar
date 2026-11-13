@@ -48,6 +48,8 @@ pub fn router() -> Router<Ctl> {
         .route("/v1/lifecycle/camp", post(camp))
         .route("/v1/lifecycle/exit", post(exit))
         .route("/v1/inventory/move", post(inventory_move))
+        .route("/v1/inventory/destroy", post(inventory_destroy))
+        .route("/v1/inventory/consume", post(inventory_consume))
         .route("/v1/pet/command", post(pet_command))
         .route("/v1/chat/tell", post(chat_tell))
         .route("/v1/chat/ooc", post(chat_ooc))
@@ -657,6 +659,42 @@ async fn inventory_move(State(c): State<Ctl>, Body(b): Body<MaybeMoveBody>) -> R
     .await
 }
 
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct MaybeSlotBody {
+    slot: Option<u32>,
+}
+
+async fn inventory_destroy(State(c): State<Ctl>, Body(b): Body<MaybeSlotBody>) -> Response {
+    if let Err(r) = live(&c) {
+        return r;
+    }
+    let Some(slot) = b.slot else {
+        return bad("provide {\"slot\":N}");
+    };
+    send(
+        &c,
+        AgentVerb::Inventory(InventoryVerb::Destroy { slot }),
+        format!("destroying the item in slot {slot}"),
+    )
+    .await
+}
+
+async fn inventory_consume(State(c): State<Ctl>, Body(b): Body<MaybeSlotBody>) -> Response {
+    if let Err(r) = live(&c) {
+        return r;
+    }
+    let Some(slot) = b.slot else {
+        return bad("provide {\"slot\":N}");
+    };
+    send(
+        &c,
+        AgentVerb::Inventory(InventoryVerb::Consume { slot }),
+        format!("consuming the item in slot {slot}"),
+    )
+    .await
+}
+
 /// `PET_*` command bytes (EQEmu zone/common.h).
 const PET_ATTACK: u8 = 2;
 const PET_FOLLOWME: u8 = 4;
@@ -1224,6 +1262,8 @@ mod tests {
             ("/v1/pet/command", r#"{"name":"dance"}"#),
             ("/v1/pet/command", ""),
             ("/v1/inventory/move", r#"{"from":23}"#),
+            ("/v1/inventory/destroy", ""),
+            ("/v1/inventory/consume", r#"{"slot":"x"}"#),
         ] {
             assert_eq!(
                 call(&c, "POST", uri, body).await.0,
@@ -1232,6 +1272,46 @@ mod tests {
             );
         }
         assert_eq!(drv.tick(&obs(vec![])).verb, None);
+    }
+
+    #[tokio::test]
+    async fn destroy_and_consume_queue_their_verbs_and_a_refusal_is_a_404_or_409() {
+        let (c, mut drv) = session(obs(vec![]));
+        let (code, body, verb) = answered(
+            &c,
+            &mut drv,
+            "/v1/inventory/destroy",
+            r#"{"slot":24}"#,
+            Some(VerbOutcome::Accepted),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+        assert_eq!(
+            verb,
+            Some(AgentVerb::Inventory(InventoryVerb::Destroy { slot: 24 }))
+        );
+        let (code, body, verb) = answered(
+            &c,
+            &mut drv,
+            "/v1/inventory/consume",
+            r#"{"slot":25}"#,
+            Some(VerbOutcome::Refused("no item in slot 25 to consume".into())),
+        )
+        .await;
+        assert_eq!(code, StatusCode::NOT_FOUND, "{body}");
+        assert_eq!(
+            verb,
+            Some(AgentVerb::Inventory(InventoryVerb::Consume { slot: 25 }))
+        );
+        let (code, body, _) = answered(
+            &c,
+            &mut drv,
+            "/v1/inventory/consume",
+            r#"{"slot":26}"#,
+            Some(VerbOutcome::Refused("Bread in slot 26 is not food or drink".into())),
+        )
+        .await;
+        assert_eq!(code, StatusCode::CONFLICT, "{body}");
     }
 
     #[tokio::test]
@@ -1262,6 +1342,8 @@ mod tests {
             "/v1/lifecycle/camp",
             "/v1/lifecycle/exit",
             "/v1/inventory/move",
+            "/v1/inventory/destroy",
+            "/v1/inventory/consume",
             "/v1/pet/command",
             "/v1/chat/tell",
             "/v1/chat/ooc",

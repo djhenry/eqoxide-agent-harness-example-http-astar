@@ -188,7 +188,7 @@ dependencies = [
 [[package]]
 name = "eqoxide-agent-protocol"
 version = "0.1.0"
-source = "git+https://github.com/djhenry/eqoxide.git?rev=149a889204523120560f96419e785d5b4e74449b#149a889204523120560f96419e785d5b4e74449b"
+source = "git+https://github.com/djhenry/eqoxide.git?rev=917616dbafd12b7ce33afbb48951233bcee7f7a3#917616dbafd12b7ce33afbb48951233bcee7f7a3"
 dependencies = [
  "serde",
  "serde_json",
@@ -197,7 +197,7 @@ dependencies = [
 [[package]]
 name = "eqoxide-assets"
 version = "0.1.0"
-source = "git+https://github.com/djhenry/eqoxide.git?rev=149a889204523120560f96419e785d5b4e74449b#149a889204523120560f96419e785d5b4e74449b"
+source = "git+https://github.com/djhenry/eqoxide.git?rev=917616dbafd12b7ce33afbb48951233bcee7f7a3#917616dbafd12b7ce33afbb48951233bcee7f7a3"
 dependencies = [
  "anyhow",
  "crc32fast",
@@ -213,7 +213,7 @@ dependencies = [
 [[package]]
 name = "eqoxide-core"
 version = "0.1.0"
-source = "git+https://github.com/djhenry/eqoxide.git?rev=149a889204523120560f96419e785d5b4e74449b#149a889204523120560f96419e785d5b4e74449b"
+source = "git+https://github.com/djhenry/eqoxide.git?rev=917616dbafd12b7ce33afbb48951233bcee7f7a3#917616dbafd12b7ce33afbb48951233bcee7f7a3"
 dependencies = [
  "dirs 5.0.1",
  "serde",
@@ -225,7 +225,7 @@ dependencies = [
 [[package]]
 name = "eqoxide-zone-geometry"
 version = "0.1.0"
-source = "git+https://github.com/djhenry/eqoxide.git?rev=149a889204523120560f96419e785d5b4e74449b#149a889204523120560f96419e785d5b4e74449b"
+source = "git+https://github.com/djhenry/eqoxide.git?rev=917616dbafd12b7ce33afbb48951233bcee7f7a3#917616dbafd12b7ce33afbb48951233bcee7f7a3"
 dependencies = [
  "eqoxide-assets",
  "eqoxide-core",
