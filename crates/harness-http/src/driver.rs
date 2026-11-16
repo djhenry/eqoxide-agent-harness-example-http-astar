@@ -3,9 +3,9 @@
 //! socket: they publish intent into [`Control`], and the driver reads it on the next observation.
 
 use eqoxide_agent_protocol::call::{Call, CallReply, CallStatus};
-use eqoxide_agent_protocol::op::Op;
 use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::Observation;
+use eqoxide_agent_protocol::op::Op;
 use eqoxide_agent_protocol::step::Step;
 use eqoxide_agent_protocol::verb::AgentVerb;
 use eqoxide_agent_protocol::verb_result::VerbOutcome;

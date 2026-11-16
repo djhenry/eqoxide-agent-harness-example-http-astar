@@ -197,7 +197,11 @@ mod tests {
     use eqoxide_agent_protocol::op::{EventsRead, FriendsEdit, MerchantBuy, ObserveMessages};
 
     fn op(method: Method, uri: &str, body: &'static str) -> Result<Op, (StatusCode, String)> {
-        request_op(&method, &uri.parse().unwrap(), &Bytes::from_static(body.as_bytes()))
+        request_op(
+            &method,
+            &uri.parse().unwrap(),
+            &Bytes::from_static(body.as_bytes()),
+        )
     }
 
     #[test]
@@ -218,20 +222,38 @@ mod tests {
     #[test]
     fn a_route_names_its_op_and_a_body_fills_its_arguments() {
         assert_eq!(
-            op(Method::POST, "/v1/merchant/buy", r#"{"merchant":"Vendor","slot":3}"#).unwrap(),
-            Op::MerchantBuy(MerchantBuy { merchant: "Vendor".into(), slot: 3 })
+            op(
+                Method::POST,
+                "/v1/merchant/buy",
+                r#"{"merchant":"Vendor","slot":3}"#
+            )
+            .unwrap(),
+            Op::MerchantBuy(MerchantBuy {
+                merchant: "Vendor".into(),
+                slot: 3
+            })
         );
-        assert_eq!(op(Method::GET, "/v1/merchant/list", "").unwrap(), Op::MerchantList);
+        assert_eq!(
+            op(Method::GET, "/v1/merchant/list", "").unwrap(),
+            Op::MerchantList
+        );
     }
 
     #[test]
     fn query_parameters_are_typed_by_the_op() {
         assert_eq!(
             op(Method::GET, "/v1/observe/messages?kind=npc", "").unwrap(),
-            Op::ObserveMessages(ObserveMessages { kind: Some("npc".into()) })
+            Op::ObserveMessages(ObserveMessages {
+                kind: Some("npc".into())
+            })
         );
         assert_eq!(
-            op(Method::GET, "/v1/events/chat?since=12&wait=5&directed=1", "").unwrap(),
+            op(
+                Method::GET,
+                "/v1/events/chat?since=12&wait=5&directed=1",
+                ""
+            )
+            .unwrap(),
             Op::EventsRead(EventsRead {
                 category: Some("chat".into()),
                 since: Some(12),
@@ -242,7 +264,9 @@ mod tests {
         // a name that is all digits stays a string
         assert_eq!(
             op(Method::GET, "/v1/observe/messages?kind=123", "").unwrap(),
-            Op::ObserveMessages(ObserveMessages { kind: Some("123".into()) })
+            Op::ObserveMessages(ObserveMessages {
+                kind: Some("123".into())
+            })
         );
     }
 
@@ -256,27 +280,58 @@ mod tests {
 
     #[test]
     fn the_friends_route_is_two_ops_by_method() {
-        assert_eq!(op(Method::GET, "/v1/social/friends", "").unwrap(), Op::SocialFriends);
+        assert_eq!(
+            op(Method::GET, "/v1/social/friends", "").unwrap(),
+            Op::SocialFriends
+        );
         assert_eq!(
             op(Method::POST, "/v1/social/friends", r#"{"add":"Alpha"}"#).unwrap(),
-            Op::SocialEditFriends(FriendsEdit { add: Some("Alpha".into()), remove: None })
+            Op::SocialEditFriends(FriendsEdit {
+                add: Some("Alpha".into()),
+                remove: None
+            })
         );
     }
 
     #[test]
     fn a_wrong_method_unknown_route_or_bad_argument_is_refused_with_its_own_status() {
         let status = |r: Result<Op, (StatusCode, String)>| r.unwrap_err().0;
-        assert_eq!(status(op(Method::POST, "/v1/observe/skills", "")), StatusCode::METHOD_NOT_ALLOWED);
-        assert_eq!(status(op(Method::GET, "/v1/merchant/buy?merchant=V&slot=3", "")), StatusCode::METHOD_NOT_ALLOWED);
-        assert_eq!(status(op(Method::GET, "/v1/no/such", "")), StatusCode::NOT_FOUND);
-        assert_eq!(status(op(Method::GET, "/v1/observe/skills/extra", "")), StatusCode::NOT_FOUND);
-        assert_eq!(status(op(Method::POST, "/v1/merchant/buy", "")), StatusCode::BAD_REQUEST);
-        let (code, why) = op(Method::POST, "/v1/merchant/buy", r#"{"merchant":"V","slot":"x"}"#)
-            .unwrap_err();
+        assert_eq!(
+            status(op(Method::POST, "/v1/observe/skills", "")),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
+            status(op(Method::GET, "/v1/merchant/buy?merchant=V&slot=3", "")),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
+            status(op(Method::GET, "/v1/no/such", "")),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status(op(Method::GET, "/v1/observe/skills/extra", "")),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status(op(Method::POST, "/v1/merchant/buy", "")),
+            StatusCode::BAD_REQUEST
+        );
+        let (code, why) = op(
+            Method::POST,
+            "/v1/merchant/buy",
+            r#"{"merchant":"V","slot":"x"}"#,
+        )
+        .unwrap_err();
         assert_eq!(code, StatusCode::BAD_REQUEST);
         assert!(why.contains("slot"), "{why}");
-        assert_eq!(status(op(Method::POST, "/v1/merchant/buy", "nope")), StatusCode::BAD_REQUEST);
-        assert_eq!(status(op(Method::POST, "/v1/merchant/buy", "[1]")), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            status(op(Method::POST, "/v1/merchant/buy", "nope")),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status(op(Method::POST, "/v1/merchant/buy", "[1]")),
+            StatusCode::BAD_REQUEST
+        );
     }
 
     #[test]

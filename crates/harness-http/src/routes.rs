@@ -1239,7 +1239,12 @@ mod tests {
         )
         .await;
         assert_eq!(code, StatusCode::OK);
-        assert_eq!(verb, Some(AgentVerb::Pet(PetVerb::Command { command: PetCommand::BackOff })));
+        assert_eq!(
+            verb,
+            Some(AgentVerb::Pet(PetVerb::Command {
+                command: PetCommand::BackOff
+            }))
+        );
     }
 
     #[tokio::test]
@@ -1507,7 +1512,10 @@ mod tests {
         assert_eq!(step.calls.len(), 1);
         assert_eq!(
             step.calls[0].op,
-            Op::MerchantBuy(MerchantBuy { merchant: "Vendor".into(), slot: 3 })
+            Op::MerchantBuy(MerchantBuy {
+                merchant: "Vendor".into(),
+                slot: 3
+            })
         );
         let mut reply_obs = obs(vec![]);
         reply_obs.call_replies = vec![CallReply {
