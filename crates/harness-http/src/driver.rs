@@ -5,6 +5,7 @@
 use eqoxide_agent_protocol::call::{Call, CallReply, CallStatus};
 use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::Observation;
+use eqoxide_agent_protocol::op::Op;
 use eqoxide_agent_protocol::step::Step;
 use eqoxide_agent_protocol::verb::AgentVerb;
 use eqoxide_agent_protocol::verb_result::VerbOutcome;
@@ -219,7 +220,7 @@ impl Control {
     /// Runs `op` on eqoxide and waits for its reply. A call that gets no reply within
     /// [`CALL_TIMEOUT`], or whose session ends first, is answered `Unavailable` here: the caller is
     /// never told a call happened when eqoxide did not say so.
-    pub async fn call(&self, op: String, args: serde_json::Value) -> CallReply {
+    pub async fn call(&self, op: Op) -> CallReply {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let id = {
             let mut inner = self.inner.lock().unwrap();
@@ -232,7 +233,7 @@ impl Control {
                 return unavailable(id, "too many calls are waiting for a reply".into());
             }
             inner.waiting.insert(id, tx);
-            inner.calls.push_back(Call { id, op, args });
+            inner.calls.push_back(Call { id, op });
             id
         };
         match tokio::time::timeout(CALL_TIMEOUT, rx).await {
