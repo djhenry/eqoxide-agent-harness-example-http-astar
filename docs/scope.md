@@ -45,12 +45,17 @@ This repo bootstraps the reference agent harness described in eqoxide's
 - **Serving the rest of eqoxide's `/v1` surface natively.** Every route not listed above
   (`merchant`, `quests`, `group`, `guild`, `trainer`, `social`, `interact` beyond `sit`/`stand`,
   the `events` feed, and the remaining `observe` routes) is forwarded to eqoxide as a `Call` over
-  the agent socket (protocol v4) and answered with eqoxide's reply. eqoxide has no HTTP server of
-  its own any more: its `eqoxide-agent-ops` crate registers each of these as a native op, and the
-  call's `op` is `"<METHOD> <path>"`, its `args` carry `query` and `body`, and the `CallStatus`
-  becomes the HTTP status (`Ok` 200, `Accepted` 202, `Invalid` 400, `NotFound` 404, `Conflict`
-  409, `Unavailable` 503, `Failed` 500). A call eqoxide does not answer within 30 seconds is
-  answered 503, saying it may or may not have happened. An op eqoxide does not know is `404`. The
+  the agent socket (protocol v7) and answered with eqoxide's reply. eqoxide has no HTTP server of
+  its own any more: the `Op` enum in its `eqoxide-agent-protocol` crate lists each of these ops.
+  The route `/v1/<group>/<action>` names the op `<group>.<action>`, and the query and the body
+  merge into the op's one `args` object. `/v1/social/friends` is `social.friends` for a `GET`
+  and `social.edit_friends` for a `POST`, and `/v1/events/<category>` is `events.read`. A request
+  whose arguments do not read as the op is `400`, naming the failing field. The method must suit
+  the op, so a `GET` only reads and any other call is a `POST`, or the answer is `405`. The
+  `CallStatus` becomes the HTTP status (`Ok` 200, `Accepted` 202, `Invalid` 400, `NotFound` 404,
+  `Conflict` 409, `Unavailable` 503, `Failed` 500). A call eqoxide does not answer within 30
+  seconds is answered 503, saying it may or may not have happened. A route that names no op is
+  `404`. The
   `observe` roster routes (`doors`, `zone_entrances`, `zone_exits`) answer an object with the list
   and `snapshot_age_ms`, not a bare array. The `camera`, `frame`, `debug`, `packets` and
   `asset_sync` routes are gone. Two routes differ from eqoxide's old ones: `zone_cross` is gone,

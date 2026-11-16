@@ -11,7 +11,7 @@ use eqoxide_agent_protocol::movement::AgentMovement;
 use eqoxide_agent_protocol::observation::{Observation, VisibleEntity};
 use eqoxide_agent_protocol::verb::{
     AgentVerb, CastRequest, ChatVerb, CombatVerb, InteractVerb, InventoryVerb, LifecycleVerb,
-    PetVerb,
+    PetCommand, PetVerb,
 };
 use harness_nav::status::{AggroAvoidOpts, NavStatus};
 use harness_nav::walker::ZoneLinesError;
@@ -695,12 +695,18 @@ async fn inventory_consume(State(c): State<Ctl>, Body(b): Body<MaybeSlotBody>) -
     .await
 }
 
-/// `PET_*` command bytes (EQEmu zone/common.h).
-const PET_ATTACK: u8 = 2;
-const PET_FOLLOWME: u8 = 4;
-const PET_GUARDHERE: u8 = 5;
-const PET_SIT: u8 = 6;
-const PET_BACKOFF: u8 = 28;
+/// The `PetCommand` for a `PET_*` command byte (EQEmu zone/common.h), or `None` for a byte
+/// eqoxide has no command for.
+fn pet_command_from_byte(byte: u8) -> Option<PetCommand> {
+    match byte {
+        2 => Some(PetCommand::Attack),
+        4 => Some(PetCommand::Follow),
+        5 => Some(PetCommand::Guard),
+        6 => Some(PetCommand::SitToggle),
+        28 => Some(PetCommand::BackOff),
+        _ => None,
+    }
+}
 
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -717,14 +723,17 @@ async fn pet_command(State(c): State<Ctl>, Body(b): Body<PetBody>) -> Response {
     // or one redundant one, and silently picking either would hide which.
     let command = match (b.command, b.name.as_deref()) {
         (Some(_), Some(_)) => return bad("give either \"command\" or \"name\", not both"),
-        (Some(n), None) => n,
+        (Some(n), None) => match pet_command_from_byte(n) {
+            Some(command) => command,
+            None => return bad("unknown pet command; use 2, 4, 5, 6 or 28, or a name"),
+        },
         (None, Some(name)) => {
             match name.to_ascii_lowercase().as_str() {
-                "attack" => PET_ATTACK,
-                "backoff" | "back_off" => PET_BACKOFF,
-                "follow" => PET_FOLLOWME,
-                "guard" => PET_GUARDHERE,
-                "sit" => PET_SIT,
+                "attack" => PetCommand::Attack,
+                "backoff" | "back_off" => PetCommand::BackOff,
+                "follow" => PetCommand::Follow,
+                "guard" => PetCommand::Guard,
+                "sit" => PetCommand::SitToggle,
                 _ => return bad(
                     "unknown pet command; use a PET_* number or attack|backoff|follow|guard|sit",
                 ),
@@ -737,7 +746,7 @@ async fn pet_command(State(c): State<Ctl>, Body(b): Body<PetBody>) -> Response {
     send(
         &c,
         AgentVerb::Pet(PetVerb::Command { command }),
-        format!("pet command {command} queued"),
+        format!("pet command {command:?} queued"),
     )
     .await
 }
@@ -803,6 +812,7 @@ mod tests {
     use axum::body::Body as AxBody;
     use axum::http::Request;
     use eqoxide_agent_protocol::observation::{LegalActionMask, OwnState};
+    use eqoxide_agent_protocol::op::{MerchantBuy, Op};
     use eqoxide_agent_protocol::step::Step;
     use eqoxide_agent_protocol::verb_result::{VerbOutcome, VerbResult};
     use harness_nav::status::NavSlots;
@@ -1229,7 +1239,7 @@ mod tests {
         )
         .await;
         assert_eq!(code, StatusCode::OK);
-        assert_eq!(verb, Some(AgentVerb::Pet(PetVerb::Command { command: 28 })));
+        assert_eq!(verb, Some(AgentVerb::Pet(PetVerb::Command { command: PetCommand::BackOff })));
     }
 
     #[tokio::test]
@@ -1481,8 +1491,8 @@ mod tests {
             call(
                 &c2,
                 "POST",
-                "/v1/merchant/buy?x=1",
-                "{\"from\":23,\"to\":30}",
+                "/v1/merchant/buy",
+                "{\"merchant\":\"Vendor\",\"slot\":3}",
             )
             .await
         });
@@ -1495,10 +1505,9 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(5)).await;
         };
         assert_eq!(step.calls.len(), 1);
-        assert_eq!(step.calls[0].op, "POST /v1/merchant/buy");
         assert_eq!(
-            step.calls[0].args,
-            json!({"query": {"x": "1"}, "body": {"from": 23, "to": 30}})
+            step.calls[0].op,
+            Op::MerchantBuy(MerchantBuy { merchant: "Vendor".into(), slot: 3 })
         );
         let mut reply_obs = obs(vec![]);
         reply_obs.call_replies = vec![CallReply {
