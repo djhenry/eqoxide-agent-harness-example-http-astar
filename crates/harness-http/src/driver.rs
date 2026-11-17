@@ -96,8 +96,9 @@ pub enum VerbReply {
     Lost(String),
 }
 
-/// Longest a caller waits for a call's reply before it is given up on.
-pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest a caller waits for a call's reply before it is given up on. It exceeds the 30 s cap on an
+/// `events.read` `wait`, so a maximal long-poll answers before the harness gives up on it.
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(40);
 
 /// Most walker notices kept for `GET /v1/observe/nav`.
 pub const MAX_NOTICES: usize = 32;

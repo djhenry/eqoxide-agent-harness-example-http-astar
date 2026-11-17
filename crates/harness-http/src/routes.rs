@@ -58,8 +58,14 @@ pub fn router() -> Router<Ctl> {
         .route("/v1/chat/guild", post(chat_guild))
 }
 
+/// A plain-text body for a success status, and an `{"error": ...}` body for an error status, so
+/// every refusal has one shape.
 fn text(code: StatusCode, msg: impl Into<String>) -> Response {
-    (code, msg.into()).into_response()
+    let msg = msg.into();
+    if code.is_client_error() || code.is_server_error() {
+        return (code, Json(json!({ "error": msg }))).into_response();
+    }
+    (code, msg).into_response()
 }
 
 fn bad(msg: impl Into<String>) -> Response {
@@ -1038,7 +1044,7 @@ mod tests {
         )
         .await;
         assert_eq!(code, StatusCode::CONFLICT, "{body}");
-        assert_eq!(body, "already attacking");
+        assert_eq!(body, r#"{"error":"already attacking"}"#);
     }
 
     #[tokio::test]
@@ -1526,7 +1532,7 @@ mod tests {
         drv.tick(&reply_obs);
         let (code, body) = request.await.unwrap();
         assert_eq!(code, StatusCode::CONFLICT);
-        assert_eq!(body, "\"a move is already queued\"");
+        assert_eq!(body, r#"{"error":"a move is already queued"}"#);
     }
 
     #[tokio::test]

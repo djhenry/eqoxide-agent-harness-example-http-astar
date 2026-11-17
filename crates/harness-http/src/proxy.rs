@@ -15,7 +15,7 @@ use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use eqoxide_agent_protocol::call::CallStatus;
-use eqoxide_agent_protocol::op::Op;
+use eqoxide_agent_protocol::op::{Op, ReadError};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
 
@@ -124,7 +124,7 @@ fn query_value(raw: &str, numbers: bool) -> Value {
 }
 
 /// Reads `name` with `args` as a typed op, or the reason the arguments do not fit it.
-fn read_op(name: &str, args: Map<String, Value>) -> Result<Op, String> {
+fn read_op(name: &str, args: Map<String, Value>) -> Result<Op, ReadError> {
     if args.is_empty() {
         // an op with no arguments reads without `args`, and one that needs some names the first
         // missing field when it reads from an empty object
@@ -134,19 +134,9 @@ fn read_op(name: &str, args: Map<String, Value>) -> Result<Op, String> {
 }
 
 /// The op a request names, or the status and reason it cannot become one. A request whose method
-/// does not suit the op is refused after the op reads, so an unknown route stays a 404.
+/// does not suit a known op is refused as a 405 ahead of any argument error, and an unknown route
+/// stays a 404.
 fn request_op(method: &Method, uri: &Uri, body: &Bytes) -> Result<Op, (StatusCode, String)> {
-    let op = read_request(method, uri, body)?;
-    if is_read(&op.name()) != (method == Method::GET) {
-        return Err((
-            StatusCode::METHOD_NOT_ALLOWED,
-            format!("{} does not answer {method}", uri.path()),
-        ));
-    }
-    Ok(op)
-}
-
-fn read_request(method: &Method, uri: &Uri, body: &Bytes) -> Result<Op, (StatusCode, String)> {
     let path = uri.path();
     let (name, route_args) = route_op(method, path)
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("no route {path}")))?;
@@ -154,18 +144,23 @@ fn read_request(method: &Method, uri: &Uri, body: &Bytes) -> Result<Op, (StatusC
     // a query string has no types, so numbers are tried first and a string read is the fallback
     // for an argument such as a name that is all digits
     let typed = build_args(route_args.clone(), uri, body, true).map_err(bad)?;
-    let first = match read_op(&name, typed) {
-        Ok(op) => return Ok(op),
-        Err(why) => why,
-    };
-    let text = build_args(route_args, uri, body, false).map_err(bad)?;
-    read_op(&name, text).map_err(|_| {
-        if first.contains("unknown variant") {
-            (StatusCode::NOT_FOUND, format!("no route {path}"))
-        } else {
-            (StatusCode::BAD_REQUEST, first)
+    let read = match read_op(&name, typed) {
+        Ok(op) => Ok(op),
+        Err(ReadError::UnknownOp(_)) => {
+            return Err((StatusCode::NOT_FOUND, format!("no route {path}")));
         }
-    })
+        Err(first) => {
+            let text = build_args(route_args, uri, body, false).map_err(bad)?;
+            read_op(&name, text).map_err(|_| first)
+        }
+    };
+    if is_read(&name) != (method == Method::GET) {
+        return Err((
+            StatusCode::METHOD_NOT_ALLOWED,
+            format!("{path} does not answer {method}"),
+        ));
+    }
+    read.map_err(|why| (StatusCode::BAD_REQUEST, why.to_string()))
 }
 
 pub async fn forward(
@@ -188,13 +183,29 @@ pub async fn forward(
         Err((status, why)) => return refuse(status, why),
     };
     let reply = control.call(op).await;
-    (http_status(reply.status), Json(reply.body)).into_response()
+    let status = http_status(reply.status);
+    (status, Json(error_body(status, reply.body))).into_response()
+}
+
+/// A reply body in the `{"error": ...}` shape when `status` is an error status. A host refusal is a
+/// bare JSON string, and a body that already has an `error` field stays as it is.
+fn error_body(status: StatusCode, body: Value) -> Value {
+    if status.is_success() {
+        return body;
+    }
+    match body {
+        Value::String(why) => json!({ "error": why }),
+        Value::Object(ref fields) if fields.contains_key("error") => body,
+        other => json!({ "error": other }),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eqoxide_agent_protocol::op::{EventsRead, FriendsEdit, MerchantBuy, ObserveMessages};
+    use eqoxide_agent_protocol::op::{
+        EventCategory, EventsRead, FriendsEdit, MerchantBuy, ObserveMessages,
+    };
 
     fn op(method: Method, uri: &str, body: &'static str) -> Result<Op, (StatusCode, String)> {
         request_op(
@@ -255,7 +266,7 @@ mod tests {
             )
             .unwrap(),
             Op::EventsRead(EventsRead {
-                category: Some("chat".into()),
+                category: Some(EventCategory::Chat),
                 since: Some(12),
                 wait: Some(5),
                 directed: Some(1),
@@ -276,6 +287,39 @@ mod tests {
             op(Method::GET, "/v1/events/all", "").unwrap(),
             Op::EventsRead(EventsRead::default())
         );
+    }
+
+    #[test]
+    fn a_category_outside_the_set_is_a_bad_argument_and_not_an_unknown_route() {
+        for path in ["/v1/events/system", "/v1/events/read"] {
+            let (code, why) = op(Method::GET, path, "").unwrap_err();
+            assert_eq!(code, StatusCode::BAD_REQUEST, "{path}");
+            assert!(why.contains("category"), "{why}");
+        }
+    }
+
+    #[test]
+    fn a_wrong_method_is_refused_before_the_arguments_are_checked() {
+        let status = |r: Result<Op, (StatusCode, String)>| r.unwrap_err().0;
+        assert_eq!(
+            status(op(Method::GET, "/v1/merchant/buy", "")),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+        assert_eq!(
+            status(op(Method::POST, "/v1/observe/messages?kind[]=1", "")),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+    }
+
+    #[test]
+    fn an_error_body_is_always_an_error_object() {
+        let bad = StatusCode::BAD_REQUEST;
+        assert_eq!(error_body(bad, json!("why")), json!({ "error": "why" }));
+        assert_eq!(
+            error_body(bad, json!({ "error": "why" })),
+            json!({ "error": "why" })
+        );
+        assert_eq!(error_body(StatusCode::OK, json!("fine")), json!("fine"));
     }
 
     #[test]
