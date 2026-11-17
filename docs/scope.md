@@ -45,7 +45,7 @@ This repo bootstraps the reference agent harness described in eqoxide's
 - **Serving the rest of eqoxide's `/v1` surface natively.** Every route not listed above
   (`merchant`, `quests`, `group`, `guild`, `trainer`, `social`, `interact` beyond `sit`/`stand`,
   the `events` feed, and the remaining `observe` routes) is forwarded to eqoxide as a `Call` over
-  the agent socket (protocol v7) and answered with eqoxide's reply. eqoxide has no HTTP server of
+  the agent socket (protocol v8) and answered with eqoxide's reply. eqoxide has no HTTP server of
   its own any more: the `Op` enum in its `eqoxide-agent-protocol` crate lists each of these ops.
   The route `/v1/<group>/<action>` names the op `<group>.<action>`, and the query and the body
   merge into the op's one `args` object. `/v1/social/friends` is `social.friends` for a `GET`
