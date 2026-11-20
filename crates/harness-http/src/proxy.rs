@@ -231,6 +231,18 @@ mod tests {
     }
 
     #[test]
+    fn the_frame_route_is_the_frame_op_and_only_a_get_reads_it() {
+        assert_eq!(
+            op(Method::GET, "/v1/observe/frame", "").unwrap(),
+            Op::ObserveFrame
+        );
+        assert_eq!(
+            op(Method::POST, "/v1/observe/frame", "").unwrap_err().0,
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+    }
+
+    #[test]
     fn a_route_names_its_op_and_a_body_fills_its_arguments() {
         assert_eq!(
             op(
